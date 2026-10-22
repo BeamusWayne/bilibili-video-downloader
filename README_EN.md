@@ -1,20 +1,26 @@
 <div align="center">
 
-<img src="docs/images/logo.png" alt="BilibiliVideoDownloader" width="80">
+<img src="docs/images/logo.png" alt="BilibiliVideoDownloader" width="72" height="72">
 
 # BilibiliVideoDownloader
 
-### Keep the videos you love, reliably.
+### Bilibili batch video and audio downloader
 
-![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-FB7299)
+**Keep the videos you love, reliably.**
+
+![Windows](https://img.shields.io/badge/Windows-Desktop-FB7299)
 ![Tauri + Rust](https://img.shields.io/badge/Tauri_2-Rust-242A35)
-[![MIT](https://img.shields.io/badge/License-MIT-2683D9)](LICENSE)
+[![MIT](https://img.shields.io/badge/License-MIT-2ea44f)](LICENSE)
 
-**Batch downloads · Verified resume · Separate conversion workers · QR login**
+Batch downloads · Verified resume · Separate conversion workers · QR login
 
-[Windows downloads](https://github.com/BeamusWayne/bilibili-video-downloader/releases) · [简体中文](README.md)
+**v0.1.1** · [Download for Windows x64](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.1.1) · [Windows guide](docs/windows.md)
+
+[Features](#features) · [Desktop interface](#desktop-interface) · [Quick Start](#quick-start) · [Related projects](#related-projects) · [中文](README.md)
 
 </div>
+
+---
 
 ## Features
 
@@ -26,11 +32,13 @@
 - Sign in with a QR code or import cookies. Windows Credential Manager stores credentials; avatars are cached locally.
 - Save covers, subtitles and danmaku, and manually repair, blur or crop regions.
 
+## Desktop interface
+
 ![Queue — demonstration data](docs/images/queue.png)
 
 Single videos, multipart videos and short links are supported. Other Bilibili sources depend on yt-dlp, platform interfaces and account access; each source type has not been verified with a live account.
 
-## Getting started
+## Quick Start
 
 Requires Windows 10 / 11 x64 and Microsoft Edge WebView2. Get the installer or portable ZIP from [Releases](https://github.com/BeamusWayne/bilibili-video-downloader/releases). Keep the portable application's `tools` and `licenses` folders alongside its executable.
 
@@ -58,8 +66,21 @@ npm run desktop
 
 Requires Node.js, Rust MSVC, Visual Studio C++ Build Tools and WebView2. See the [development guide](docs/development.md), [Windows guide](docs/windows.md) and [changelog](CHANGELOG.md).
 
+## Related projects
+
+Two independent Bilibili tools by the same author, for different workflows:
+
+| Project | Use it for | Get started |
+| --- | --- | --- |
+| [BilibiliVideoDownloader](https://github.com/BeamusWayne/bilibili-video-downloader) | Batch video and audio downloads, verified resume and multiple output formats | [Windows x64](https://github.com/BeamusWayne/bilibili-video-downloader/releases/latest) |
+| [Bili Live Companion](https://github.com/BeamusWayne/bili-live-companion) | Live-drop watching, multi-account task tracking and reward claims | [Desktop and server guide](https://github.com/BeamusWayne/bili-live-companion/blob/main/README_EN.md#quick-start) |
+
 ## License
 
 Source: [MIT](LICENSE). Bundled tools retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). Unofficial and unaffiliated with Bilibili. Region filters cannot guarantee invisible restoration. AI watermark detection and live-stream recording are not included.
 
-<div align="center">Made with ☕ by <a href="https://github.com/BeamusWayne">Beamus Wayne</a></div>
+---
+
+<div align="center">
+  Made with ☕ by <a href="https://github.com/BeamusWayne">Beamus Wayne</a>
+</div>
