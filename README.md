@@ -1,21 +1,23 @@
 <div align="center">
 
-<img src="docs/images/logo.png" alt="BilibiliVideoDownloader" width="80" height="80">
+<img src="docs/images/logo.png" alt="BilibiliVideoDownloader" width="72" height="72">
 
 # BilibiliVideoDownloader
 
-### 把喜欢的视频，稳稳留在本地。
+### 哔哩哔哩视频与音频批量下载器
 
-![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-FB7299)
+**把喜欢的视频，稳稳留在本地。**
+
+![Windows](https://img.shields.io/badge/Windows-Desktop-FB7299)
 ![Tauri + Rust](https://img.shields.io/badge/Tauri_2-Rust-242A35)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-内置-2A9069)
-[![MIT](https://img.shields.io/badge/License-MIT-2683D9)](LICENSE)
+[![MIT](https://img.shields.io/badge/License-MIT-2ea44f)](LICENSE)
 
-**批量下载 · 校验续传 · 独立转码 · 扫码登录**
+批量下载 · 校验续传 · 独立转码 · 扫码登录
 
-**v0.1.1** · [下载 Windows x64 版](https://github.com/BeamusWayne/bilibili-video-downloader/releases) · [使用说明](docs/windows.md) · [English](README_EN.md)
+**v0.1.1** · [下载 Windows x64 版](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.1.1) · [Windows 使用说明](docs/windows.md) · [English](README_EN.md)
 
-[功能一览](#功能一览) · [桌面界面](#桌面界面) · [快速开始](#快速开始) · [稳定性设计](#稳定性设计) · [开发指南](docs/development.md)
+[功能一览](#功能一览) · [桌面界面](#桌面界面) · [快速开始](#快速开始) · [稳定性设计](#稳定性设计) · [相关项目](#相关项目) · [开发指南](docs/development.md)
 
 </div>
 
@@ -92,6 +94,15 @@ npm run desktop
 
 需要 Node.js、Rust MSVC stable、Visual Studio 2022 C++ Build Tools 和 WebView2。测试与打包见 [开发指南](docs/development.md)，版本变化见 [更新日志](CHANGELOG.md)。
 
+## 相关项目
+
+同一作者维护的两款独立工具，按使用场景选择：
+
+| 项目 | 适用场景 | 下载 |
+| --- | --- | --- |
+| [BilibiliVideoDownloader](https://github.com/BeamusWayne/bilibili-video-downloader) | 批量保存 B站视频与音频，支持校验续传和多格式导出 | [Windows x64](https://github.com/BeamusWayne/bilibili-video-downloader/releases/latest) |
+| [Bili Live Companion](https://github.com/BeamusWayne/bili-live-companion) | 直播掉宝任务守候、多账号进度追踪与奖励领取 | [桌面版与部署指南](https://github.com/BeamusWayne/bili-live-companion#快速开始) |
+
 ## 账号与许可
 
 Cookie 长期存于 **Windows 凭据管理器**，解析器使用短期 Cookie 文件。头像、资料、数据库与媒体缓存在本机，源码仓库不包含这些数据。离线资料显示「登录状态待验证」。
@@ -103,6 +114,5 @@ Cookie 长期存于 **Windows 凭据管理器**，解析器使用短期 Cookie �
 ---
 
 <div align="center">
-Made with ☕ by <a href="https://github.com/BeamusWayne">Beamus Wayne</a>
-<br><sub>把时间留给观看，把下载交给队列。</sub>
+  Made with ☕ by <a href="https://github.com/BeamusWayne">Beamus Wayne</a>
 </div>
