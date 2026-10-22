@@ -1,2 +1,108 @@
-# bilibili-video-downloader
-Windows B站下载器：批量队列、校验续传、扫码登录与多格式导出，内置 FFmpeg。
+<div align="center">
+
+<img src="docs/images/logo.png" alt="BilibiliVideoDownloader" width="80" height="80">
+
+# BilibiliVideoDownloader
+
+### 把喜欢的视频，稳稳留在本地。
+
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-FB7299)
+![Tauri + Rust](https://img.shields.io/badge/Tauri_2-Rust-242A35)
+![FFmpeg](https://img.shields.io/badge/FFmpeg-内置-2A9069)
+[![MIT](https://img.shields.io/badge/License-MIT-2683D9)](LICENSE)
+
+**批量下载 · 校验续传 · 独立转码 · 扫码登录**
+
+**v0.1.1** · [下载 Windows x64 版](https://github.com/BeamusWayne/bilibili-video-downloader/releases) · [使用说明](docs/windows.md) · [English](README_EN.md)
+
+[功能一览](#功能一览) · [桌面界面](#桌面界面) · [快速开始](#快速开始) · [稳定性设计](#稳定性设计) · [开发指南](docs/development.md)
+
+</div>
+
+---
+
+## 功能一览
+
+| 能做什么 | 使用体验 |
+| --- | --- |
+| 📥 **批量下载** | 多行链接、BV / AV 或 TXT；解析弹窗中勾选内容，点击「开始下载」入队 |
+| 🔄 **校验续传** | 4 MiB 分片逐片校验，暂停、断网或异常结束后恢复已确认进度 |
+| 🎞️ **多格式导出** | MP4、MKV、MP3、M4A、FLAC、WAV；内置 FFmpeg / FFprobe |
+| 🚦 **并发调度** | 下载任务、每文件连接、总连接与转码分别限流，支持全局限速 |
+| 📱 **账号管理** | 扫码或导入 Cookie，系统凭据管理器保存登录态，本地缓存头像 |
+| 🗂️ **本地整理** | 按 UP 主和分 P 命名，支持封面、字幕、弹幕及附件单独保存 |
+| ✂️ **画面处理** | 框选区域修补、模糊或裁切，先预览再导出，可保留原片 |
+
+单视频、多 P、短链接可直接解析。收藏夹、合集、UP 主空间、稍后再看、番剧、课程等入口依赖内置 yt-dlp、站点接口和账号访问权限，尚未逐项完成真实账号验证。
+
+## 桌面界面
+
+![下载队列](docs/images/queue.png)
+
+白色工作台配少量 B站粉，状态用颜色区分。白色顶栏集成窗口控制，账号单独管理，设置固定在左下角。
+
+<details>
+<summary><b>新建下载 → 解析弹窗 → 下载队列</b></summary>
+
+![新建下载](docs/images/add.png)
+
+![解析弹窗](docs/images/parse.png)
+
+</details>
+
+截图中的任务、数值与进度均为演示数据。
+
+## 快速开始
+
+1. 从 [Releases](https://github.com/BeamusWayne/bilibili-video-downloader/releases) 下载安装包，或解压便携 ZIP。
+2. 在「账号」扫码登录，或导入已有 Cookie。
+3. 在「新建下载」粘贴链接，点击「解析链接」。
+4. 在弹窗勾选分 P，按需调整格式、画质与目录，点击「开始下载」。
+5. 在队列中暂停、继续、重试，完成后直接打开文件。
+
+**需要 Windows 10 / 11 x64 和 WebView2。** 使用安装包无需安装 Node.js、Rust 或 FFmpeg。便携版需要保留同目录的 `tools` 与 `licenses`。
+
+默认保存到 `下载/Bilibili/UP主/主标题/分P序号-分P标题 [任务ID].扩展名`。建议先使用默认并发：**3 个下载任务、每文件 4 连接、总计 12 连接、1 个转码任务**。详见 [Windows 使用说明](docs/windows.md)。
+
+## 稳定性设计
+
+| 环节 | 处理方式 |
+| --- | --- |
+| 持久化 | SQLite WAL 保存队列、设置、解析结果，按设置恢复未完成任务 |
+| 分片恢复 | 写盘后记录长度与 SHA-256，恢复时校验旧分片 |
+| 一致性 | 比对资源身份、长度、强 ETag / Last-Modified，源变化时重下 |
+| 网络异常 | 有限重试、退避、地址刷新、限流冷却 |
+| 兼容性 | 无 Range 时单连接；错误范围响应直接拒绝 |
+| 输出校验 | 临时文件经 FFprobe 检查后发布，避免半成品冒充完成 |
+| 大队列 | 虚拟列表与合并后的批量操作请求 |
+
+已通过本地故障模拟、500 项队列检查，以及真实视频 MP4 / MP3 导出和暂停续传验证。证据与未覆盖范围见 [TESTING.md](TESTING.md)，实现见 [架构说明](docs/architecture.md)。
+
+未确认的当前分片会重下；无可靠验证器时安全重下；转码中断后重新转码，源缓存仍可复用。缓存手动清理，磁盘需同时容纳分片、合并缓存和最终文件。
+
+## 开发与构建
+
+```powershell
+git clone https://github.com/BeamusWayne/bilibili-video-downloader.git
+cd bilibili-video-downloader
+npm ci
+npm run prepare:tools
+npm run desktop
+```
+
+需要 Node.js、Rust MSVC stable、Visual Studio 2022 C++ Build Tools 和 WebView2。测试与打包见 [开发指南](docs/development.md)，版本变化见 [更新日志](CHANGELOG.md)。
+
+## 账号与许可
+
+Cookie 长期存于 **Windows 凭据管理器**，解析器使用短期 Cookie 文件。头像、资料、数据库与媒体缓存在本机，源码仓库不包含这些数据。离线资料显示「登录状态待验证」。
+
+代码采用 [MIT License](LICENSE)，内置工具保留各自许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。手动区域滤镜不能保证无痕修复；当前不含自动 AI 水印识别与直播录制。
+
+参考 [bdl](https://github.com/Yuelioi/bdl) 的使用场景，下载与恢复引擎独立实现，尚未进行同条件长期对比。本项目是非官方工具，与 Bilibili 无隶属关系。
+
+---
+
+<div align="center">
+Made with ☕ by <a href="https://github.com/BeamusWayne">Beamus Wayne</a>
+<br><sub>把时间留给观看，把下载交给队列。</sub>
+</div>
