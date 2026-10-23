@@ -17,6 +17,8 @@ Batch downloads · Verified resume · Separate conversion workers · QR login
 
 **Windows v0.1.1** · [Download for Windows x64](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.1.1) · [Windows guide](docs/windows.md)
 
+**New interface beta v0.2.0-beta.2** · [Windows and macOS downloads](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.2)
+
 **macOS v0.2.0-beta.1** · [Apple Silicon / Intel DMG beta](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.1) · [macOS installation guide](docs/macos.md)
 
 [Features](#features) · [Desktop interface](#desktop-interface) · [Quick Start](#quick-start) · [Related projects](#related-projects) · [中文](README.md)
