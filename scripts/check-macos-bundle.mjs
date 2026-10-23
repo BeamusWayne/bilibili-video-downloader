@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -20,7 +21,11 @@ if (!dmgArgument || !["arm64", "x86_64"].includes(expectedArch)) {
   );
 }
 const dmg = path.resolve(dmgArgument);
-const temporary = await mkdtemp(path.join(tmpdir(), "bvd-install-check-"));
+// macOS /var aliases /private/var. Tauri intentionally rejects an executable
+// launched through symlinks, so exercise installation using the real path.
+const temporary = await realpath(
+  await mkdtemp(path.join(tmpdir(), "bvd-install-check-")),
+);
 const mount = path.join(temporary, "mount");
 const installed = path.join(
   temporary,
