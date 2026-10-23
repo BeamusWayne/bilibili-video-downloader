@@ -22,8 +22,12 @@ def metadata():
     if (run["conclusion"] != "success" or run["name"] != "macOS DMG"
             or run["head_repository"]["full_name"] != repository):
         raise ValueError("Source must be a successful native macOS run in this repository")
-    release = api(f"repos/{repository}/releases/tags/{tag}")
-    if not release["draft"] or not release["prerelease"] or release["target_commitish"] != run["head_sha"]:
+    # The REST by-tag endpoint omits drafts; gh also checks the draft list.
+    release = json.loads(subprocess.check_output([
+        "gh", "release", "view", tag, "--repo", repository,
+        "--json", "isDraft,isPrerelease,targetCommitish",
+    ], text=True))
+    if not release["isDraft"] or not release["isPrerelease"] or release["targetCommitish"] != run["head_sha"]:
         raise ValueError("Release must be a draft prerelease targeting the tested commit")
     return repository, tag, run["head_sha"]
 
