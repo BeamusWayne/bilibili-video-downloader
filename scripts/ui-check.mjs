@@ -1,16 +1,25 @@
-import { chromium } from "@playwright/test";
+import { chromium, webkit } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "vite";
 const server = await createServer({
   server: { host: "127.0.0.1", port: 1430, strictPort: true },
 });
 await server.listen();
-const browser = await chromium.launch({ channel: "msedge", headless: true });
+const mac =
+  process.env.BVD_UI_PLATFORM === "macos" || process.platform === "darwin";
+const browser =
+  process.env.BVD_UI_BROWSER === "webkit"
+    ? await webkit.launch({ headless: true })
+    : await chromium.launch({ channel: "msedge", headless: true });
 try {
   const page = await browser.newPage({
     viewport: { width: 1180, height: 790 },
     deviceScaleFactor: 1,
   });
+  if (mac)
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
+    });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => {
@@ -133,16 +142,22 @@ try {
   );
   if (nativeConfig.app.windows[0].decorations !== false)
     throw Error("Native titlebar is still enabled");
-  for (const name of ["最小化", "最大化或还原", "关闭窗口"])
-    await page.getByRole("button", { name, exact: true }).click();
-  const calls = await page.evaluate(() => window.__windowCalls);
-  for (const command of [
-    "plugin:window|minimize",
-    "plugin:window|toggle_maximize",
-    "plugin:window|close",
-  ])
-    if (!calls.includes(command))
-      throw Error(`Window control did not invoke ${command}`);
+  if (mac) {
+    if (await page.locator(".window-controls").count())
+      throw Error("macOS rendered duplicate window controls");
+    await page.locator(".app.macos").waitFor();
+  } else {
+    for (const name of ["最小化", "最大化或还原", "关闭窗口"])
+      await page.getByRole("button", { name, exact: true }).click();
+    const calls = await page.evaluate(() => window.__windowCalls);
+    for (const command of [
+      "plugin:window|minimize",
+      "plugin:window|toggle_maximize",
+      "plugin:window|close",
+    ])
+      if (!calls.includes(command))
+        throw Error(`Window control did not invoke ${command}`);
+  }
   if ((await page.locator(".task-row").count()) > 20)
     throw Error("Queue is not virtualized");
   await mkdir("test-results", { recursive: true });

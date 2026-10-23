@@ -1,5 +1,7 @@
 :root {
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: #272b35;
@@ -167,6 +169,9 @@ label > select {
   width: 37px;
   height: 37px;
   object-fit: contain;
+}
+.macos .titlebar {
+  padding-left: 98px;
 }
 .titlebar span {
   font-size: 14px;

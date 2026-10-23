@@ -71,6 +71,7 @@ const emptyParse: ParseState = {
   total: 0,
 };
 const active = ["resolving", "downloading", "retrying", "converting"];
+const isMac = /Mac/.test(navigator.platform);
 const nav = [
   { id: "add" as Page, label: "新建下载", Icon: Plus },
   { id: "queue" as Page, label: "下载队列", Icon: Download },
@@ -313,29 +314,34 @@ export default function App() {
     }
   };
   return (
-    <div className="app">
+    <div className={`app${isMac ? " macos" : ""}`}>
       <header className="titlebar" data-tauri-drag-region>
         <img src={icon} alt="" draggable={false} data-tauri-drag-region />
         <span data-tauri-drag-region>BilibiliVideoDownloader</span>
         <div className="titlebar-space" data-tauri-drag-region />
-        <div className="window-controls" aria-label="窗口控制">
-          <Button title="最小化" onClick={() => void windowAction("minimize")}>
-            <Minus size={16} />
-          </Button>
-          <Button
-            title="最大化或还原"
-            onClick={() => void windowAction("toggleMaximize")}
-          >
-            <Square size={13} />
-          </Button>
-          <Button
-            title="关闭窗口"
-            className="window-close"
-            onClick={() => void windowAction("close")}
-          >
-            <X size={17} />
-          </Button>
-        </div>
+        {!isMac && (
+          <div className="window-controls" aria-label="窗口控制">
+            <Button
+              title="最小化"
+              onClick={() => void windowAction("minimize")}
+            >
+              <Minus size={16} />
+            </Button>
+            <Button
+              title="最大化或还原"
+              onClick={() => void windowAction("toggleMaximize")}
+            >
+              <Square size={13} />
+            </Button>
+            <Button
+              title="关闭窗口"
+              className="window-close"
+              onClick={() => void windowAction("close")}
+            >
+              <X size={17} />
+            </Button>
+          </div>
+        )}
       </header>
       <div className="shell">
         <aside>

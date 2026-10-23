@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BilibiliVideoDownloader",
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 25 },
+        "shadow": true,
+        "width": 1180,
+        "height": 790,
+        "minWidth": 900,
+        "minHeight": 640,
+        "backgroundColor": "#ffffff"
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.icns"],
+    "resources": {
+      "binaries/macos/": "tools/",
+      "licenses/macos/": "licenses/",
+      "../LICENSE": "licenses/BilibiliVideoDownloader-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-",
+      "dmg": {
+        "windowSize": { "width": 660, "height": 420 },
+        "appPosition": { "x": 180, "y": 180 },
+        "applicationFolderPosition": { "x": 480, "y": 180 }
+      }
+    }
+  }
+}

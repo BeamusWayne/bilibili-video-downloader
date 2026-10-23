@@ -1,11 +1,11 @@
-use bvd::{media, model::*, process::capture};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use bvd::{media, model::*, platform, process::capture};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 #[tokio::test]
 async fn bundled_tools_produce_all_formats_and_watermark_previews() {
-    let tools = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    let tools = platform::development_tools();
     assert!(
-        tools.join("ffmpeg.exe").exists(),
+        platform::tool(&tools, "ffmpeg").exists(),
         "run npm run prepare:tools"
     );
     let dir = tempfile::tempdir().unwrap();
@@ -37,7 +37,7 @@ async fn bundled_tools_produce_all_formats_and_watermark_previews() {
     .chain([source.to_string_lossy().into_owned()])
     .collect::<Vec<_>>();
     capture(
-        &tools.join("ffmpeg.exe"),
+        &platform::tool(&tools, "ffmpeg"),
         &args,
         &cancel,
         Duration::from_secs(45),

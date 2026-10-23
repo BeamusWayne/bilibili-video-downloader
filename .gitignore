@@ -1,7 +1,8 @@
 node_modules/
 dist/
 src-tauri/target/
-src-tauri/binaries/*.exe
+src-tauri/binaries/
+src-tauri/licenses/macos/
 .cache/
 test-results/
 playwright-report/

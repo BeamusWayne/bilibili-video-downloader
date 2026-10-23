@@ -1,6 +1,6 @@
 {
   "name": "bilibili-video-downloader",
-  "version": "0.1.1",
+  "version": "0.2.0-beta.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "package": "tauri build --features custom-protocol",
     "test": "node scripts/ui-check.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "prepare:tools": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-tools.ps1"
+    "prepare:tools": "node scripts/prepare-tools.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

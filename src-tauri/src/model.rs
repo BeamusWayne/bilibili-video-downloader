@@ -33,15 +33,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            directory: std::env::var("USERPROFILE")
-                .map(|p| {
-                    PathBuf::from(p)
-                        .join("Downloads")
-                        .join("Bilibili")
-                        .to_string_lossy()
-                        .into_owned()
-                })
-                .unwrap_or_else(|_| "downloads".into()),
+            directory: crate::platform::download_directory()
+                .to_string_lossy()
+                .into_owned(),
             tasks: 3,
             connections: 4,
             global_connections: 12,

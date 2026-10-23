@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
     let mode = args.get(2).map(String::as_str).unwrap_or("probe");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let dir = root.parent().unwrap().join(".cache/live-check");
-    let engine = Engine::new(dir.clone(), root.join("binaries"))?;
+    let engine = Engine::new(dir.clone(), bvd::platform::development_tools())?;
     let account = engine.provider.account().await?;
     println!("Login: {}", account.logged_in);
     if mode == "account" {

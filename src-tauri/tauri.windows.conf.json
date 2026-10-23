@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "binaries/": "tools/",
+      "licenses/": "licenses/",
+      "../LICENSE": "licenses/BilibiliVideoDownloader-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md"
+    }
+  }
+}

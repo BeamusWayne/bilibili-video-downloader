@@ -2,6 +2,7 @@ pub mod download;
 pub mod engine;
 pub mod media;
 pub mod model;
+pub mod platform;
 pub mod process;
 pub mod provider;
 pub mod store;
@@ -293,7 +294,7 @@ async fn preview_frame(
     }
     args.push(dest.to_string_lossy().into_owned());
     process::capture(
-        &state.provider.tools.join("ffmpeg.exe"),
+        &platform::tool(&state.provider.tools, "ffmpeg"),
         &args,
         &token,
         Duration::from_secs(120),
@@ -314,9 +315,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_menu(tauri::menu::Menu::default(app)?)?;
             let data = app.path().app_data_dir()?;
             let tools = if cfg!(debug_assertions) {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")
+                platform::development_tools()
             } else {
                 app.path().resource_dir()?.join("tools")
             };
@@ -383,6 +386,21 @@ pub fn run() {
             reprocess,
             preview_frame
         ])
-        .run(tauri::generate_context!())
-        .expect("启动下载器失败");
+        .build(tauri::generate_context!())
+        .expect("启动下载器失败")
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => {
+                if let Some(engine) = app.try_state::<Arc<Engine>>() {
+                    engine.stop();
+                }
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
+        });
 }

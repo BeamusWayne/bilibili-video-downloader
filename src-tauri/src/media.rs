@@ -46,7 +46,7 @@ pub async fn inspect(tools: &Path, path: &Path, c: &CancellationToken) -> Result
     ];
     Ok(serde_json::from_slice(
         &capture(
-            &tools.join("ffprobe.exe"),
+            &crate::platform::tool(tools, "ffprobe"),
             &args,
             c,
             Duration::from_secs(45),
@@ -200,7 +200,7 @@ pub async fn convert(
         format!("title={}", task.item.title),
         temp.to_string_lossy().into_owned(),
     ]);
-    let mut child = command(&tools.join("ffmpeg.exe"))
+    let mut child = command(&crate::platform::tool(tools, "ffmpeg"))
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

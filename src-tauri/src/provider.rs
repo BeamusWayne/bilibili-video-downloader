@@ -92,7 +92,7 @@ impl Provider {
         let _permit = self.extraction_gate.acquire(cancel).await?;
         for attempt in 0..3 {
             let result = capture(
-                &self.tools.join("yt-dlp.exe"),
+                &crate::platform::tool(&self.tools, "yt-dlp"),
                 &argv,
                 cancel,
                 Duration::from_secs(900),
