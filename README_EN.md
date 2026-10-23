@@ -59,6 +59,14 @@ Unfinished chunks restart. Sources without reliable validators restart safely. I
 
 Local fault tests, a simulated 500-task UI and real MP4 / MP3 exports have passed. This is not a benchmark against other downloaders. See [verification](TESTING.md) and [architecture](docs/architecture.md).
 
+## White workspace and batch reliability
+
+The new interface includes named presets, a persistent download history, part-aware duplicate detection, disk-space protection, cache cleanup and a verified yt-dlp update/reset entry. Updates live in user data and never modify the signed macOS app bundle. Ctrl+Enter (Command+Enter on macOS) opens the parsing preview; downloads require confirmation.
+
+## Companion handoff
+
+In the new [Bili Live Companion](https://github.com/BeamusWayne/bili-live-companion), choose **下载回放 / 视频** and supply published BV/AV video links. The downloader opens one instance and presents the parsing preview. Credentials remain separate; a live room is never treated as a published replay. If the downloader is missing, copy the links or use the release download entry. See [protocol details](docs/companion.md).
+
 ## Development
 
 ```powershell

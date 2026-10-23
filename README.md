@@ -18,6 +18,8 @@
 
 **Windows v0.1.1** · [下载 Windows x64 版](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.1.1) · [Windows 使用说明](docs/windows.md)
 
+**新版界面测试版 v0.2.0-beta.2** · [Windows 与 macOS 下载](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.2)
+
 **macOS v0.2.0-beta.1** · [下载 Apple 芯片 / Intel DMG 测试版](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.1) · [macOS 安装说明](docs/macos.md) · [English](README_EN.md)
 
 [功能一览](#功能一览) · [桌面界面](#桌面界面) · [快速开始](#快速开始) · [稳定性设计](#稳定性设计) · [相关项目](#相关项目) · [开发指南](docs/development.md)
@@ -86,6 +88,28 @@
 已通过本地故障模拟、500 项队列检查，以及真实视频 MP4 / MP3 导出和暂停续传验证。证据与未覆盖范围见 [TESTING.md](TESTING.md)，实现见 [架构说明](docs/architecture.md)。
 
 未确认的当前分片会重下；无可靠验证器时安全重下；转码中断后重新转码，源缓存仍可复用。缓存手动清理，磁盘需同时容纳分片、合并缓存和最终文件。
+
+## 纯白工作台与批量优化
+
+- **预设**：保存格式、画质、码率、目录、附件和命名规则，选择一个作为默认值。
+- **历史去重**：解析后默认跳过本地仍存在的已下载文件；分 P、输出格式及处理选项分别识别。换保存目录不会误当成新视频，文件已删除则允许补下。
+- **空间保护**：解析弹窗显示目标磁盘余量；下载前估算缓存，下载和转码期间保留余量。空间不足会暂停任务，清理缓存或释放空间后继续。
+- **解析器维护**：在设置中更新 yt-dlp，校验官方发布的 SHA-256 后切换，支持取消和恢复内置版本。FFmpeg 不受此更新影响。
+- **操作**：Ctrl + Enter / macOS Command + Enter 解析链接，勾选后点击开始；暂停、继续与重试作用于当前筛选及所选任务。
+
+<details><summary><b>预设与设置</b></summary>
+
+![下载预设](docs/images/presets.png)
+
+![设置](docs/images/settings.png)
+
+</details>
+
+## 与掉宝助手联动
+
+在 [Bili Live Companion](https://github.com/BeamusWayne/bili-live-companion) 新版侧栏点击「下载回放 / 视频」，粘贴已发布的视频链接，点击「在下载器中确认」。下载器会被单实例唤起并打开解析弹窗，确认格式、目录和分 P 后再开始。
+
+两款应用各自保存登录态，只传递公开 BV/AV 视频链接。直播间不会被误当成回放；回放尚未发布时，需要等待或自行提供相关视频。未安装下载器时，助手提供下载入口与复制链接兜底。协议与验证边界见 [联动说明](docs/companion.md)。
 
 ## 开发与构建
 

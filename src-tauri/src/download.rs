@@ -30,6 +30,11 @@ impl Drop for Permit {
     }
 }
 impl Gate {
+    pub fn cooldown(&self) -> u64 {
+        self.cool_until
+            .load(Ordering::Relaxed)
+            .saturating_sub(crate::model::now())
+    }
     pub fn new(max: usize) -> Arc<Self> {
         Arc::new(Self {
             maximum: AtomicUsize::new(max),
@@ -101,6 +106,7 @@ impl Rate {
 }
 #[derive(Clone)]
 pub struct Downloader {
+    pub reserve: Arc<AtomicU64>,
     pub client: Client,
     pub gate: Arc<Gate>,
     pub rate: Arc<Rate>,
@@ -126,6 +132,7 @@ pub struct Progress {
 impl Downloader {
     pub fn new(max: usize) -> Result<Self> {
         Ok(Self {
+            reserve: Arc::new(AtomicU64::new(128 * 1024 * 1024)),
             client: Client::builder()
                 .connect_timeout(Duration::from_secs(12))
                 .redirect(reqwest::redirect::Policy::limited(5))
@@ -229,6 +236,7 @@ impl Downloader {
         cancel: &CancellationToken,
     ) -> Result<PathBuf> {
         tokio::fs::create_dir_all(dir).await?;
+        crate::library::check_space(dir, CHUNK, self.reserve.load(Ordering::Relaxed))?;
         let mut attempt = 0;
         let identity = loop {
             match self.probe(s, cancel).await {
@@ -277,10 +285,11 @@ impl Downloader {
    for attempt in 0..=retries {
     let mut received=0u64;
     let result=self.chunk(s,&id,start,end,&file,cancel,&p,&mut received).await;
-    match result {Ok(hash)=>{atomic_json(&checkpoint,&Checkpoint{size:received,sha256:hash}).await?;return Ok(());},Err(e)=>{p.done.fetch_sub(received,Ordering::Relaxed);let text=e.to_string();if cancel.is_cancelled()||attempt==retries||text.contains("403")||text.contains("401")||text.contains("404")||text.contains("范围")||text.contains("资源变化"){return Err(e);}let delay=(1u64<<attempt.min(5))*500+(crate::model::now()%7)*61;tokio::select!{_=cancel.cancelled()=>bail!("已暂停"),_=tokio::time::sleep(Duration::from_millis(delay))=>{}}}}
+    match result {Ok(hash)=>{atomic_json(&checkpoint,&Checkpoint{size:received,sha256:hash}).await?;return Ok(());},Err(e)=>{p.done.fetch_sub(received,Ordering::Relaxed);let text=e.to_string();if cancel.is_cancelled()||attempt==retries||text.contains("403")||text.contains("401")||text.contains("404")||text.contains("范围")||text.contains("资源变化")||text.contains("磁盘空间不足"){return Err(e);}let delay=(1u64<<attempt.min(5))*500+(crate::model::now()%7)*61;tokio::select!{_=cancel.cancelled()=>bail!("已暂停"),_=tokio::time::sleep(Duration::from_millis(delay))=>{}}}}
    }bail!("重试失败")
   }}).buffer_unordered(connections.clamp(1,8)).try_collect::<Vec<_>>().await?;
         let output = dir.join("complete.media");
+        crate::library::check_space(dir, identity.total, self.reserve.load(Ordering::Relaxed))?;
         let mut merged = tokio::fs::File::create(&output).await?;
         for i in 0..count {
             ensure!(!cancel.is_cancelled(), "已暂停");
@@ -336,6 +345,7 @@ impl Downloader {
             }
         }
         let mut stream = response.bytes_stream();
+        crate::library::check_space(path, CHUNK, self.reserve.load(Ordering::Relaxed))?;
         let mut file = tokio::fs::File::create(path).await?;
         let mut hash = Sha256::new();
         loop {
@@ -349,6 +359,9 @@ impl Downloader {
                 );
             }
             self.rate.wait(bytes.len(), c).await?;
+            if *received / CHUNK != (*received + bytes.len() as u64) / CHUNK {
+                crate::library::check_space(path, CHUNK, self.reserve.load(Ordering::Relaxed))?;
+            }
             file.write_all(&bytes).await?;
             hash.update(&bytes);
             *received += bytes.len() as u64;

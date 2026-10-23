@@ -1,6 +1,6 @@
 [package]
 name = "bilibili-video-downloader"
-version = "0.2.0-beta.1"
+version = "0.2.0-beta.2"
 edition = "2021"
 description = "A resilient local Bilibili downloader"
 license = "MIT"
@@ -19,7 +19,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-notification = "2"
+fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

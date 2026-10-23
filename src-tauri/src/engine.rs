@@ -17,6 +17,9 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 pub struct Engine {
+    pub presets: Mutex<crate::library::Presets>,
+    pub incoming: Mutex<Option<String>>,
+    pub updater: crate::maintenance::Updater,
     pub store: Store,
     pub tasks: Mutex<Vec<Task>>,
     pub settings: Mutex<Settings>,
@@ -33,6 +36,9 @@ pub struct Engine {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    cooldown: u64,
+    presets: crate::library::Presets,
+    incoming: Option<String>,
     tasks: Vec<Task>,
     settings: Settings,
     parse: ParseState,
@@ -49,7 +55,13 @@ impl Engine {
         std::fs::create_dir_all(&data)?;
         let store = Store::open(&data.join("tasks.db"))?;
         let settings = store.settings()?;
+        let presets = store
+            .config("presets")
+            .unwrap_or_else(|| crate::library::Presets::initial(&settings));
         let mut tasks = store.tasks()?;
+        for t in tasks.iter().filter(|t| t.status == "completed") {
+            store.record_download(t)?;
+        }
         for t in &mut tasks {
             if [
                 "resolving",
@@ -72,9 +84,16 @@ impl Engine {
         }
         let mut parse = store.load_parse();
         parse.running = false;
+        let downloader = Downloader::new(settings.global_connections)?;
+        downloader
+            .reserve
+            .store(settings.disk_reserve_mib * 1024 * 1024, Ordering::Relaxed);
         Ok(Arc::new(Self {
+            presets: Mutex::new(presets),
+            incoming: Mutex::new(None),
+            updater: crate::maintenance::Updater::default(),
             provider: Provider::new(tools, data.join("credentials-temp"))?,
-            downloader: Downloader::new(settings.global_connections)?,
+            downloader,
             converter: Gate::new(settings.conversions),
             resolver: Gate::new(1),
             store,
@@ -89,6 +108,9 @@ impl Engine {
     }
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
+            cooldown: self.downloader.gate.cooldown(),
+            presets: self.presets.lock().unwrap().clone(),
+            incoming: self.incoming.lock().unwrap().clone(),
             tasks: self.tasks.lock().unwrap().clone(),
             settings: self.settings.lock().unwrap().clone(),
             parse: self.parse.lock().unwrap().clone(),
@@ -108,6 +130,18 @@ impl Engine {
     }
     pub fn save_settings(&self, s: Settings) -> Result<()> {
         s.validate()?;
+        let old = self.settings.lock().unwrap().directory.clone();
+        if old != s.directory {
+            let mut presets = self.presets.lock().unwrap();
+            let mut next = presets.clone();
+            for p in &mut next.items {
+                if p.options.directory == old {
+                    p.options.directory = s.directory.clone();
+                }
+            }
+            self.store.save_config("presets", &next)?;
+            *presets = next;
+        }
         self.store.save_settings(&s)?;
         self.downloader
             .gate
@@ -120,21 +154,76 @@ impl Engine {
         self.converter
             .maximum
             .store(s.conversions, Ordering::Relaxed);
+        self.downloader
+            .reserve
+            .store(s.disk_reserve_mib * 1024 * 1024, Ordering::Relaxed);
         *self.settings.lock().unwrap() = s;
         Ok(())
     }
     pub fn enqueue(&self, items: Vec<MediaItem>, options: Options) -> Result<usize> {
+        self.enqueue_with(items, options, false)
+    }
+    pub fn duplicates(
+        &self,
+        items: &[MediaItem],
+        options: &Options,
+    ) -> Result<HashMap<String, String>> {
+        let existing: HashSet<_> = self
+            .store
+            .history()?
+            .into_iter()
+            .filter(|h| Path::new(&h.output).is_file())
+            .map(|h| h.key)
+            .collect();
+        let queued_keys: HashSet<_> = self
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|t| !["cancelled", "completed"].contains(&t.status.as_str()))
+            .map(|t| crate::library::history_key(&t.item, &t.options))
+            .collect();
+        Ok(items
+            .iter()
+            .filter_map(|i| {
+                let key = crate::library::history_key(i, options);
+                let queued = queued_keys.contains(&key);
+                if queued {
+                    Some((i.url.clone(), "已在队列".into()))
+                } else if existing.contains(&key) {
+                    Some((i.url.clone(), "已下载".into()))
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+    pub fn enqueue_with(
+        &self,
+        items: Vec<MediaItem>,
+        options: Options,
+        force: bool,
+    ) -> Result<usize> {
         options.validate()?;
         ensure!(items.len() <= 5000, "单次最多添加 5000 项");
+        let known = self.duplicates(&items, &options)?;
         let mut tasks = self.tasks.lock().unwrap();
-        let mut added = 0;
-        for item in items {
+        for item in &items {
             crate::provider::normalize_input(&item.url)?;
-            if tasks.iter().any(|t| {
-                t.item.url == item.url
-                    && serde_json::to_value(&t.options).ok() == serde_json::to_value(&options).ok()
-                    && t.status != "cancelled"
-            }) {
+        }
+        let mut pending = vec![];
+        let mut keys: HashSet<_> = tasks
+            .iter()
+            .filter(|t| !["completed", "cancelled"].contains(&t.status.as_str()))
+            .map(|t| crate::library::history_key(&t.item, &t.options))
+            .collect();
+        for item in items {
+            if known
+                .get(&item.url)
+                .map(|v| v == "已在队列" || !force)
+                .unwrap_or(false)
+                || !keys.insert(crate::library::history_key(&item, &options))
+            {
                 continue;
             }
             let mut t = Task::new(item, options.clone());
@@ -146,10 +235,11 @@ impl Engine {
                 options.format
             );
             t.output = base.with_file_name(name).to_string_lossy().into_owned();
-            self.store.save_task(&t)?;
-            tasks.push(t);
-            added += 1;
+            pending.push(t);
         }
+        self.store.save_tasks(&pending)?;
+        let added = pending.len();
+        tasks.extend(pending);
         Ok(added)
     }
     pub fn action(&self, id: &str, action: &str) -> Result<()> {
@@ -230,18 +320,61 @@ impl Engine {
                             let id = task.id.clone();
                             let result = eng.run_task(task, &token).await;
                             if let Err(e) = result {
-                                let text = crate::process::redact(&e.to_string());
+                                let raw = crate::process::redact(&e.to_string());
+                                let text = if [
+                                    "os error 112",
+                                    "No space left",
+                                    "not enough space on the disk",
+                                ]
+                                .iter()
+                                .any(|s| raw.contains(s))
+                                {
+                                    "磁盘空间不足，任务已暂停。请释放空间后继续。".to_string()
+                                } else {
+                                    raw
+                                };
                                 let _ = eng.update(&id, |t| {
                                     if token.is_cancelled() {
                                         if t.status != "cancelled" {
                                             t.status = "paused".into();
                                         }
+                                    } else if text.contains("磁盘空间不足") {
+                                        t.status = "paused".into();
+                                        t.error = text.clone();
                                     } else {
                                         t.status = "error".into();
                                         t.error = text;
                                     }
                                     t.speed = 0;
                                 });
+                            }
+                            let disk_full = eng
+                                .tasks
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .any(|t| t.id == id && t.error.contains("磁盘空间不足"));
+                            if disk_full {
+                                let ids: Vec<_> = eng
+                                    .tasks
+                                    .lock()
+                                    .unwrap()
+                                    .iter()
+                                    .filter(|t| {
+                                        [
+                                            "queued",
+                                            "resolving",
+                                            "downloading",
+                                            "retrying",
+                                            "converting",
+                                        ]
+                                        .contains(&t.status.as_str())
+                                    })
+                                    .map(|t| t.id.clone())
+                                    .collect();
+                                for id in ids {
+                                    let _ = eng.action(&id, "pause");
+                                }
                             }
                             eng.active.lock().unwrap().remove(&id);
                         });
@@ -252,6 +385,9 @@ impl Engine {
         });
     }
     async fn run_task(self: &Arc<Self>, task: Task, cancel: &CancellationToken) -> Result<()> {
+        let reserve = self.settings.lock().unwrap().disk_reserve_mib * 1024 * 1024;
+        crate::library::check_space(&self.data, 0, reserve)?;
+        crate::library::check_space(Path::new(&task.options.directory), 0, reserve)?;
         if task.options.resource == "extras" {
             self.update(&task.id, |t| {
                 t.status = "resolving".into();
@@ -271,6 +407,16 @@ impl Engine {
                 t.stage = "已完成".into();
                 t.output = files[0].to_string_lossy().into_owned();
             })?;
+            let completed = self
+                .tasks
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|t| t.id == task.id)
+                .cloned();
+            if let Some(t) = completed {
+                self.store.record_download(&t)?;
+            }
             return Ok(());
         }
         let dir = self.data.join("cache").join(&task.id);
@@ -318,6 +464,14 @@ impl Engine {
                         .resolve(&task.item, &task.options, cancel)
                         .await?
                 };
+                let estimate = r
+                    .streams
+                    .iter()
+                    .map(|s| s.size)
+                    .sum::<u64>()
+                    .saturating_mul(2);
+                let cached_bytes = crate::maintenance::directory_size(&dir);
+                crate::library::check_space(&dir, estimate.saturating_sub(cached_bytes), reserve)?;
                 self.update(&task.id, |t| {
                     t.status = "downloading".into();
                     t.stage = "下载中".into();
@@ -388,9 +542,29 @@ impl Engine {
             t.stage = "等待处理".into();
         })?;
         let _permit = self.converter.acquire(cancel).await?;
+        let input_bytes = inputs
+            .iter()
+            .filter_map(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .sum::<u64>();
+        let estimate = if task.options.format == "wav" {
+            (r.duration * 192_000.).max(input_bytes as f64) as u64
+        } else {
+            input_bytes.saturating_mul(2)
+        };
+        crate::library::check_space(Path::new(&task.options.directory), estimate, reserve)?;
         let eng = self.clone();
         let id = task.id.clone();
+        let output_dir = task.options.directory.clone();
+        let conversion_cancel = cancel.clone();
         let cb = Arc::new(move |percent: f64| {
+            if crate::library::check_space(Path::new(&output_dir), 0, reserve).is_err() {
+                let _ = eng.update(&id, |t| {
+                    t.error = "磁盘空间不足，任务已暂停。请释放空间后继续。".into()
+                });
+                conversion_cancel.cancel();
+                return;
+            }
             let _ = eng.update(&id, |t| t.stage = format!("处理中 · {:.0}%", percent));
         });
         if task.options.watermark.keep_original
@@ -438,6 +612,7 @@ impl Engine {
             t.error.clear();
             t.speed = 0;
         })?;
+        self.store.record_download(&task)?;
         Ok(())
     }
     fn monitor(

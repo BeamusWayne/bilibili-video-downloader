@@ -92,7 +92,10 @@ impl Provider {
         let _permit = self.extraction_gate.acquire(cancel).await?;
         for attempt in 0..3 {
             let result = capture(
-                &crate::platform::tool(&self.tools, "yt-dlp"),
+                &crate::maintenance::parser_path(
+                    &self.tools,
+                    self.cache.parent().unwrap_or(&self.cache),
+                ),
                 &argv,
                 cancel,
                 Duration::from_secs(900),
