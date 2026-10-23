@@ -1,5 +1,3 @@
-#![cfg(target_os = "macos")]
-
 #[tokio::test]
 async fn long_unicode_titles_can_be_written_to_the_file_system() {
     use bvd::model::*;
@@ -23,7 +21,7 @@ async fn long_unicode_titles_can_be_written_to_the_file_system() {
     )
     .unwrap();
     engine.enqueue(vec![item], options).unwrap();
-    let task = engine.snapshot().tasks[0].clone();
+    let task = engine.tasks.lock().unwrap()[0].clone();
     let output = std::path::Path::new(&task.output);
     std::fs::create_dir_all(output.parent().unwrap()).unwrap();
     std::fs::write(output, b"test output").unwrap();

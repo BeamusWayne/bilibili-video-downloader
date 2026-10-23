@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: macos-dmg-${{ github.ref }}
-  cancel-in-progress: true
+  # Finish native builds so the next revision can reuse compiled dependencies.
+  cancel-in-progress: false
 
 jobs:
   build:
