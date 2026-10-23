@@ -7,7 +7,7 @@ license = "MIT"
 
 [lib]
 name = "bvd"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
