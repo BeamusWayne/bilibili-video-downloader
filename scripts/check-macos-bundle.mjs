@@ -32,7 +32,12 @@ let child;
 let startup = "";
 const run = (file, args) =>
   execFileSync(file, args, { encoding: "utf8", timeout: 120_000 });
-const checks = { architecture: expectedArch, macOS: release(), checks: [] };
+const checks = {
+  sourceCommit: process.env.GITHUB_SHA,
+  architecture: expectedArch,
+  macOS: release(),
+  checks: [],
+};
 try {
   run("hdiutil", ["verify", dmg]);
   run("hdiutil", [

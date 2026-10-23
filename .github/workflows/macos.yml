@@ -57,7 +57,7 @@ jobs:
       - name: Build frontend
         run: npm run build
       - name: Test engine, media pipeline and native Keychain
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --release --features custom-protocol --target ${{ matrix.target }} --tests
       - name: Install WebKit test browser
         run: npx playwright install webkit
       - name: Test macOS interface in WebKit

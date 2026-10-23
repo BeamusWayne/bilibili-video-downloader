@@ -34,6 +34,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --jobs 2 --tests
 
 macOS 界面检查使用 `npx playwright install webkit`，随后运行 `BVD_UI_BROWSER=webkit npm test`。同一套引擎和媒体测试在两个 Mac 架构运行，额外校验钥匙串跨 Entry 实例持久化。Windows 上可通过 `$env:BVD_UI_PLATFORM = "macos"; npm test` 检查 Mac 布局分支，但这不等于原生 WebKit 验证。
 
+macOS CI 使用发布模式及 `custom-protocol`，复用打包目标依赖，同时检查超长 Unicode 标题实际入队和写盘，以及取消后解析器子进程停止。验证报告包含构建源码提交。
+
 ## 打包
 
 ```powershell

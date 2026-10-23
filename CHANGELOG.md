@@ -5,6 +5,7 @@
 - 新增 macOS 13+ 测试版，提供 Apple Silicon 与 Intel 原生 DMG，内置 FFmpeg、FFprobe 和 yt-dlp。
 - macOS 登录态使用系统钥匙串，默认保存到系统下载目录。
 - 原生窗口按钮、编辑菜单与 Dock 重新打开窗口；复用现有下载调度与续传引擎。
+- macOS 按 UTF-8 字节限制长标题文件名；暂停或超时后清理解析器进程组，避免子进程占用后续任务的资源。
 - 按平台分离工具资源、安装配置和开发路径，保留 Windows 现有认证与调用方式。
 - 新增双架构 macOS 构建、WebKit 界面和 DMG 安装检查流程。
 - DMG 使用 ad-hoc 签名，尚无 Developer ID 签名和 Apple 公证。

@@ -1,7 +1,7 @@
 #![cfg(target_os = "macos")]
 
-#[test]
-fn long_unicode_titles_can_be_written_to_the_file_system() {
+#[tokio::test]
+async fn long_unicode_titles_can_be_written_to_the_file_system() {
     use bvd::model::*;
     let root = tempfile::tempdir().unwrap();
     let item = MediaItem {
@@ -17,7 +17,13 @@ fn long_unicode_titles_can_be_written_to_the_file_system() {
     let mut options = Options::default();
     options.directory = root.path().to_string_lossy().into_owned();
     options.template = "{标题}".into();
-    let task = Task::new(item, options);
+    let engine = bvd::engine::Engine::new(
+        root.path().join("state"),
+        bvd::platform::development_tools(),
+    )
+    .unwrap();
+    engine.enqueue(vec![item], options).unwrap();
+    let task = engine.snapshot().tasks[0].clone();
     let output = std::path::Path::new(&task.output);
     std::fs::create_dir_all(output.parent().unwrap()).unwrap();
     std::fs::write(output, b"test output").unwrap();
