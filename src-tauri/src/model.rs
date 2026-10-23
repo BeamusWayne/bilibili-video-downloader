@@ -262,6 +262,7 @@ pub struct Resolved {
     pub cid: Option<String>,
 }
 pub fn safe_name(s: &str) -> String {
+    let mut byte_count = 0;
     let mut n: String = s
         .chars()
         .map(|c| {
@@ -272,6 +273,11 @@ pub fn safe_name(s: &str) -> String {
             }
         })
         .take(100)
+        .take_while(|c| {
+            byte_count += c.len_utf8();
+            // Reserve room for task IDs and extensions on Unix file systems.
+            cfg!(windows) || byte_count <= 180
+        })
         .collect();
     n = n.trim().trim_end_matches(['.', ' ']).to_owned();
     if n.is_empty() {

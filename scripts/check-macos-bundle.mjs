@@ -87,7 +87,35 @@ try {
     const architectures = run("lipo", ["-archs", program]).trim().split(/\s+/);
     if (!architectures.includes(expectedArch))
       throw new Error(`Wrong binary architecture: ${program}`);
-    for (const line of run("otool", ["-L", program]).split("\n").slice(1)) {
+    const loadCommands = run("otool", ["-arch", expectedArch, "-l", program]);
+    const minimumVersions = loadCommands
+      .split(/Load command \d+/)
+      .flatMap((block) => {
+        const buildVersion = /cmd LC_BUILD_VERSION\b/.test(block);
+        if (!buildVersion && !/cmd LC_VERSION_MIN_MACOSX\b/.test(block))
+          return [];
+        const value = block.match(
+          buildVersion
+            ? /^\s*minos\s+(\d+)\.(\d+)/m
+            : /^\s*version\s+(\d+)\.(\d+)/m,
+        );
+        return value ? [value] : [];
+      });
+    if (
+      !minimumVersions.length ||
+      minimumVersions.some(
+        (match) =>
+          Number(match[1]) > 13 ||
+          (Number(match[1]) === 13 && Number(match[2]) > 0),
+      )
+    ) {
+      throw new Error(
+        `Binary exceeds the macOS 13 deployment target: ${program}`,
+      );
+    }
+    for (const line of run("otool", ["-arch", expectedArch, "-L", program])
+      .split("\n")
+      .slice(1)) {
       const dependency = line.trim().split(" ")[0];
       if (
         dependency &&
