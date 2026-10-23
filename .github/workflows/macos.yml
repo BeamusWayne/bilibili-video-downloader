@@ -1,0 +1,91 @@
+name: macOS DMG
+
+on:
+  push:
+    branches: [main, feat/macos-dmg]
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "scripts/**"
+      - "package*.json"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-dmg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.arch }} DMG
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            binary_arch: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+            binary_arch: x86_64
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: "src-tauri -> target"
+      - run: npm ci
+      - name: Prepare verified native tools and icon
+        run: npm run prepare:tools
+      - name: Build frontend
+        run: npm run build
+      - name: Test engine, media pipeline and native Keychain
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --tests
+      - name: Install WebKit test browser
+        run: npx playwright install webkit
+      - name: Test macOS interface in WebKit
+        env:
+          BVD_UI_BROWSER: webkit
+        run: npm test
+      - name: Build native app and DMG
+        run: npm run package -- --target ${{ matrix.target }} --bundles app,dmg
+      - name: Verify install, binaries, conversions and native launch
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILD_ARCH: ${{ matrix.arch }}
+          BINARY_ARCH: ${{ matrix.binary_arch }}
+        run: |
+          mkdir -p release/macos
+          VERSION=$(node -p "require('./package.json').version")
+          cp src-tauri/target/$BUILD_TARGET/release/bundle/dmg/*.dmg "release/macos/BilibiliVideoDownloader_${VERSION}_macos-${BUILD_ARCH}.dmg"
+          node scripts/check-macos-bundle.mjs "release/macos/BilibiliVideoDownloader_${VERSION}_macos-${BUILD_ARCH}.dmg" "$BINARY_ARCH"
+      - name: Upload tested DMG
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-${{ matrix.arch }}-dmg
+          path: release/macos/*
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload interface test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-${{ matrix.arch }}-ui
+          path: test-results/*
+          if-no-files-found: ignore
