@@ -22,6 +22,8 @@ export interface Options {
   watermark: Watermark;
 }
 export interface Settings {
+  notifications: boolean;
+  diskReserveMib: number;
   directory: string;
   tasks: number;
   connections: number;
@@ -72,6 +74,9 @@ export interface ParseState {
   total: number;
 }
 export interface Snapshot {
+  cooldown?: number;
+  presets?: Presets;
+  incoming?: string | null;
   tasks: Task[];
   settings: Settings;
   parse: ParseState;
@@ -87,6 +92,8 @@ export interface Account {
   cached?: boolean;
 }
 export const defaults: Settings = {
+  notifications: true,
+  diskReserveMib: 512,
   directory: "",
   tasks: 3,
   connections: 4,
@@ -104,6 +111,42 @@ export const defaults: Settings = {
   danmaku: false,
   template: "{UP主}/{标题}/{P序号}-{分P标题}",
 };
+export interface Preset {
+  id: string;
+  name: string;
+  options: Options;
+}
+export interface Presets {
+  items: Preset[];
+  defaultId: string;
+}
+export type Call = <T>(
+  command: string,
+  args?: Record<string, unknown>,
+) => Promise<T | undefined>;
+export function initialPresets(s: Settings): Presets {
+  const o = optionsFrom(s);
+  return {
+    defaultId: "daily",
+    items: [
+      {
+        id: "daily",
+        name: "日常视频",
+        options: { ...o, quality: s.quality || 1080 },
+      },
+      {
+        id: "audio",
+        name: "只保存声音",
+        options: { ...o, format: "mp3", quality: 0 },
+      },
+      {
+        id: "original",
+        name: "保留高画质",
+        options: { ...o, format: "mkv", quality: 0 },
+      },
+    ],
+  };
+}
 export const watermark: Watermark = {
   mode: "none",
   x: 1,
@@ -155,4 +198,12 @@ export function duration(n: number) {
   return `${Math.floor(n / 60)}:${Math.floor(n % 60)
     .toString()
     .padStart(2, "0")}`;
+}
+export function formatSummary(o: Options) {
+  if (o.resource === "extras") return "附件";
+  if (["mp3", "m4a"].includes(o.format))
+    return `${o.format.toUpperCase()} · ${o.bitrate} kbps`;
+  if (["flac", "wav"].includes(o.format))
+    return `${o.format.toUpperCase()} · 无损格式`;
+  return `${o.format.toUpperCase()} · ${o.quality ? `${o.quality}P` : "最高可用"}`;
 }

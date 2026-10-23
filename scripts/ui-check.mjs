@@ -2,7 +2,7 @@ import { chromium, webkit } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "vite";
 const server = await createServer({
-  server: { host: "127.0.0.1", port: 1430, strictPort: true },
+  server: { host: "127.0.0.1", port: 1430, strictPort: true, watch: null },
 });
 await server.listen();
 const mac =
@@ -16,6 +16,10 @@ try {
     viewport: { width: 1180, height: 790 },
     deviceScaleFactor: 1,
   });
+  page.setDefaultTimeout(15000);
+  page.on("console", (msg) => {
+    if (msg.type() === "error") console.error("PAGE", msg.text());
+  });
   if (mac)
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
@@ -25,6 +29,8 @@ try {
   await page.addInitScript(() => {
     window.isTauri = true;
     const settings = {
+      notifications: true,
+      diskReserveMib: 512,
       directory: "D:\\Downloads\\Bilibili",
       tasks: 3,
       connections: 4,
@@ -102,12 +108,38 @@ try {
       connections: 12,
       version: "0.1.0",
     };
+    window.__mockState = state;
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: "main" } },
       invoke: async (cmd, args) => {
         (window.__windowCalls ??= []).push(cmd);
         (window.__recordedCalls ??= []).push({ cmd, args });
         if (cmd === "snapshot") return structuredClone(state);
+        if (cmd === "available_space") return 20000000000;
+        if (cmd === "check_duplicates") return state.duplicateFixture || {};
+        if (cmd === "maintenance_status")
+          return {
+            cacheBytes: 1024,
+            cacheFree: 10000000000,
+            outputFree: 20000000000,
+            parserVersion: "2026.10.21",
+            parserUpdated: false,
+            updating: false,
+          };
+        if (cmd === "qr_login")
+          return {
+            url: "https://passport.bilibili.com/test",
+            qrcode_key: "mock-key",
+          };
+        if (cmd === "save_presets") {
+          state.presets = args.presets;
+          return null;
+        }
+        if (cmd === "ack_handoff") {
+          state.incoming = null;
+          return null;
+        }
+        if (cmd === "download_history") return [];
         if (cmd === "account")
           return { loggedIn: false, name: "", uid: 0, vip: false };
         if (cmd === "task_action") {
@@ -135,6 +167,7 @@ try {
     };
   });
   await page.goto("http://127.0.0.1:1430/");
+  await page.getByRole("button", { name: "下载队列", exact: true }).click();
   await page.getByRole("heading", { name: "下载队列" }).waitFor();
   await page.getByText("500 个任务").waitFor();
   const nativeConfig = JSON.parse(
@@ -186,6 +219,24 @@ try {
   await page.getByRole("heading", { name: "账号", exact: true }).waitFor();
   if (await page.getByRole("heading", { name: "并发与恢复" }).count())
     throw Error("Account still mixed with settings");
+  await page.getByRole("button", { name: "扫码登录", exact: true }).click();
+  await page.getByAltText("B站登录二维码").waitFor();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "关闭", exact: true })
+    .click();
+  await page.getByRole("button", { name: "下载预设", exact: true }).click();
+  await page.getByRole("button", { name: "新建预设", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "预设名称", exact: true })
+    .fill("我的声音");
+  await page
+    .getByRole("combobox", { name: "保存格式", exact: true })
+    .selectOption("mp3");
+  await page.getByRole("button", { name: "设为默认", exact: true }).click();
+  await page.getByRole("button", { name: "保存预设", exact: true }).click();
+  await page.getByText("预设已保存", { exact: true }).waitFor();
+  await page.screenshot({ path: "test-results/presets.png", fullPage: true });
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("heading", { name: "并发与恢复" }).waitFor();
   await page.screenshot({ path: "test-results/settings.png", fullPage: true });
@@ -211,10 +262,12 @@ try {
     "https://www.bilibili.com/video/BV1SUnB61E8K/"
   )
     throw Error("Link draft was lost");
-  await page.getByRole("button", { name: "解析链接" }).click();
+  await page.getByRole("textbox", { name: "视频链接" }).press("Control+Enter");
   await page.getByText("已选 10 / 10").waitFor();
   await page.getByRole("dialog").waitFor();
-  const checkboxes = page.getByRole("dialog").getByRole("checkbox");
+  const checkboxes = page
+    .getByRole("dialog")
+    .locator(".results-heading input[type=checkbox]");
   await checkboxes.first().uncheck();
   if (await page.getByRole("button", { name: "开始下载 · 0" }).isEnabled())
     throw Error("Empty selection can start a download");
@@ -222,6 +275,44 @@ try {
   await page.screenshot({ path: "test-results/parse.png", fullPage: true });
   await page.getByRole("button", { name: "开始下载 · 10" }).click();
   await page.getByRole("heading", { name: "下载队列" }).waitFor();
+  // A second-process handoff opens the preview, without enqueueing by itself.
+  const before = await page.evaluate(
+    () => window.__recordedCalls.filter((c) => c.cmd === "enqueue").length,
+  );
+  await page.evaluate(() => {
+    window.__mockState.incoming =
+      "https://www.bilibili.com/video/BV1SUnB61E8K?p=7";
+  });
+  await page.getByRole("dialog", { name: "选择下载内容" }).waitFor();
+  const after = await page.evaluate(
+    () => window.__recordedCalls.filter((c) => c.cmd === "enqueue").length,
+  );
+  if (before !== after) throw Error("Handoff downloaded without confirmation");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "关闭", exact: true })
+    .click();
+  await page.evaluate(() => {
+    window.__mockState.incoming = null;
+    window.__mockState.duplicateFixture = {
+      [window.__mockState.parse.items[0].url]: "已下载",
+    };
+  });
+  await page.getByRole("button", { name: "解析链接" }).click();
+  await page.getByText("已选 9 / 10 · 跳过 1", { exact: true }).waitFor();
+  await page
+    .getByRole("dialog")
+    .getByRole("checkbox", { name: "跳过已下载 / 已在队列", exact: true })
+    .uncheck();
+  await page.getByText("已选 10 / 10", { exact: true }).waitFor();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "关闭", exact: true })
+    .click();
+  await page.getByRole("button", { name: "下载队列", exact: true }).click();
+  await page.getByRole("button", { name: "下载历史", exact: true }).click();
+  await page.getByRole("dialog", { name: "下载历史", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
   if (errors.length) throw Error(errors.join("\n"));
   console.log(
     "PASS: frameless window controls, 500-task virtualization, pause, navigation, settings placement, no rail, parse and enqueue, zero runtime errors.",

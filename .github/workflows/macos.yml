@@ -10,6 +10,15 @@ on:
       - "package*.json"
       - ".github/workflows/macos.yml"
   workflow_dispatch:
+    inputs:
+      publish_run_id:
+        description: "Upload verified artifacts from a completed macOS run; leave empty to build"
+        required: false
+        default: ""
+      release_tag:
+        description: "Existing draft prerelease tag for artifact upload"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -21,6 +30,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.publish_run_id == ''
     name: ${{ matrix.arch }} DMG
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -91,3 +101,30 @@ jobs:
           name: macos-${{ matrix.arch }}-ui
           path: test-results/*
           if-no-files-found: ignore
+
+  publish-tested:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BVD_RUN_ID: ${{ inputs.publish_run_id }}
+      BVD_RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify source run and draft target
+        run: python3 scripts/publish-tested-macos.py metadata
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          run-id: ${{ inputs.publish_run_id }}
+          github-token: ${{ github.token }}
+          pattern: macos-*-dmg
+          merge-multiple: true
+          path: tested-macos
+      - name: Verify both architectures and upload to draft
+        run: python3 scripts/publish-tested-macos.py upload

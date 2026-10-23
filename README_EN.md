@@ -17,6 +17,8 @@ Batch downloads · Verified resume · Separate conversion workers · QR login
 
 **Windows v0.1.1** · [Download for Windows x64](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.1.1) · [Windows guide](docs/windows.md)
 
+**New interface beta v0.2.0-beta.2** · [Windows and macOS downloads](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.2)
+
 **macOS v0.2.0-beta.1** · [Apple Silicon / Intel DMG beta](https://github.com/BeamusWayne/bilibili-video-downloader/releases/tag/v0.2.0-beta.1) · [macOS installation guide](docs/macos.md)
 
 [Features](#features) · [Desktop interface](#desktop-interface) · [Quick Start](#quick-start) · [Related projects](#related-projects) · [中文](README.md)
@@ -58,6 +60,14 @@ SQLite WAL persists tasks. SHA-256 checkpoints, ETag / Last-Modified and resourc
 Unfinished chunks restart. Sources without reliable validators restart safely. Interrupted conversions restart conversion while retaining source files. Cache cleanup is manual.
 
 Local fault tests, a simulated 500-task UI and real MP4 / MP3 exports have passed. This is not a benchmark against other downloaders. See [verification](TESTING.md) and [architecture](docs/architecture.md).
+
+## White workspace and batch reliability
+
+The new interface includes named presets, a persistent download history, part-aware duplicate detection, disk-space protection, cache cleanup and a verified yt-dlp update/reset entry. Updates live in user data and never modify the signed macOS app bundle. Ctrl+Enter (Command+Enter on macOS) opens the parsing preview; downloads require confirmation.
+
+## Companion handoff
+
+In the new [Bili Live Companion](https://github.com/BeamusWayne/bili-live-companion), choose **下载回放 / 视频** and supply published BV/AV video links. The downloader opens one instance and presents the parsing preview. Credentials remain separate; a live room is never treated as a published replay. If the downloader is missing, copy the links or use the release download entry. See [protocol details](docs/companion.md).
 
 ## Development
 

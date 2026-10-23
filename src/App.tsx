@@ -45,6 +45,7 @@ import {
   Square,
 } from "lucide-react";
 import QRCode from "qrcode";
+import { PresetsPage, MaintenancePanel, HistoryList } from "./Workspace";
 import icon from "./assets/app-icon.png";
 import {
   type Account,
@@ -57,6 +58,9 @@ import {
   type Watermark,
   defaults,
   optionsFrom,
+  formatSummary,
+  initialPresets,
+  type Presets,
   statusName,
   bytes,
   duration,
@@ -212,7 +216,9 @@ function VirtualList<T>({
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>("queue");
+  const [page, setPage] = useState<Page>("add");
+  const [history, setHistory] = useState(false);
+  const [handoff, setHandoff] = useState(0);
   const [snap, setSnap] = useState<Snapshot>({
     tasks: [],
     settings: defaults,
@@ -229,14 +235,27 @@ export default function App() {
   const [processing, setProcessing] = useState<Task | null>(null);
   const [options, setOptions] = useState<Options>(optionsFrom(defaults));
   const initial = useRef(false);
+  const handoffSeen = useRef("");
   const refresh = useCallback(async () => {
     if (!isTauri()) return;
     try {
       const data = await invoke<Snapshot>("snapshot");
       setSnap(data);
       setConnected(true);
+      if (data.incoming && data.incoming !== handoffSeen.current) {
+        handoffSeen.current = data.incoming;
+        setDraft(data.incoming);
+        setPage("add");
+        setHandoff(Date.now());
+        void invoke("ack_handoff").then(() => {
+          handoffSeen.current = "";
+        });
+      }
       if (!initial.current) {
-        setOptions(optionsFrom(data.settings));
+        setOptions(
+          data.presets?.items.find((p) => p.id === data.presets?.defaultId)
+            ?.options || optionsFrom(data.settings),
+        );
         initial.current = true;
       }
     } catch (e) {
@@ -348,13 +367,23 @@ export default function App() {
           <nav>
             {nav.map(({ id, label, Icon }) => (
               <button
+                aria-label={label}
+                title={label}
                 className={page === id ? "nav-item active" : "nav-item"}
                 key={id}
                 aria-current={page === id ? "page" : undefined}
                 onClick={(e) => navigate(id, e.currentTarget)}
               >
                 <Icon size={19} />
-                {label}
+                <span className="nav-label">
+                  {{
+                    add: "新建",
+                    queue: "队列",
+                    presets: "预设",
+                    account: "账号",
+                    settings: "设置",
+                  }[id] || label}
+                </span>
                 {id === "queue" &&
                   snap.tasks.filter((t) => active.includes(t.status)).length >
                     0 && (
@@ -402,6 +431,8 @@ export default function App() {
           {page === "queue" && (
             <Queue
               tasks={snap.tasks}
+              onHistory={() => setHistory(true)}
+              cooldown={snap.cooldown || 0}
               onAdd={() => setPage("add")}
               onAction={action}
               onDetail={setDetail}
@@ -411,6 +442,10 @@ export default function App() {
           {page === "add" && (
             <Add
               input={draft}
+              call={call}
+              handoff={handoff}
+              onHandoffUsed={() => setHandoff(0)}
+              presets={snap.presets || initialPresets(snap.settings)}
               setInput={setDraft}
               parse={snap.parse}
               options={options}
@@ -431,9 +466,13 @@ export default function App() {
                   ? await call<string>("read_text", { path })
                   : undefined;
               }}
-              onEnqueue={async (items) => {
+              onEnqueue={async (items, force) => {
                 setBusy(true);
-                const n = await call<number>("enqueue", { items, options });
+                const n = await call<number>("enqueue", {
+                  items,
+                  options,
+                  force,
+                });
                 setBusy(false);
                 if (n !== undefined) {
                   setNotice(
@@ -445,51 +484,37 @@ export default function App() {
             />
           )}
           {page === "presets" && (
-            <div className="page-scroll">
-              <div className="page-heading">
-                <h1>下载预设</h1>
-                <Button
-                  primary
-                  onClick={async () => {
-                    const next = {
-                      ...snap.settings,
-                      format: options.format,
-                      quality: options.quality,
-                      bitrate: options.bitrate,
-                      cover: options.cover,
-                      subtitles: options.subtitles,
-                      danmaku: options.danmaku,
-                      template: options.template,
-                    };
-                    if (
-                      (await call("save_settings", { settings: next })) !==
-                      undefined
-                    )
-                      setNotice("预设已保存");
-                  }}
-                >
-                  保存预设
-                </Button>
-              </div>
-              <OptionsForm options={options} onChange={setOptions} advanced />
-              <div className="setting-section">
-                <h3>
-                  <Scissors size={18} />
-                  画面处理
-                </h3>
-                <p className="muted">
-                  从已下载任务的详情中打开画面处理，框选区域并预览。
-                </p>
-              </div>
-            </div>
+            <PresetsPage
+              presets={snap.presets || initialPresets(snap.settings)}
+              save={async (presets: Presets) => {
+                const result = await call("save_presets", { presets });
+                if (result === undefined) return false;
+                setOptions(
+                  presets.items.find((p) => p.id === presets.defaultId)!
+                    .options,
+                );
+                setNotice("预设已保存");
+                return true;
+              }}
+              renderOptions={(value, change) => (
+                <OptionsForm options={value} onChange={change} advanced />
+              )}
+            />
           )}
-          {page === "account" && <AccountPage call={call} notify={setNotice} />}
+          {page === "account" && (
+            <AccountPage call={call} notify={setNotice} error={error} />
+          )}
           {page === "settings" && (
             <SettingsPage
               settings={snap.settings}
+              call={call}
+              notify={setNotice}
+              version={snap.version}
               onSave={async (settings) => {
-                if ((await call("save_settings", { settings })) !== undefined)
+                if ((await call("save_settings", { settings })) !== undefined) {
+                  setOptions((o) => ({ ...o, directory: settings.directory }));
                   setNotice("设置已保存");
+                }
               }}
               onExport={async () => {
                 const path = await save({
@@ -505,6 +530,11 @@ export default function App() {
           )}
         </main>
       </div>
+      {history && (
+        <Modal title="下载历史" wide onClose={() => setHistory(false)}>
+          <HistoryList call={call} />
+        </Modal>
+      )}
       {task && (
         <Modal title="任务详情" onClose={() => setDetail(null)}>
           <div className="detail-title">{task.item.title}</div>
@@ -529,7 +559,36 @@ export default function App() {
             <dt>来源</dt>
             <dd>{task.item.url}</dd>
           </dl>
-          {task.error && <div className="error-box">{task.error}</div>}
+          {task.error && (
+            <div className="error-box">
+              {task.error}
+              <div className="actions">
+                {/登录|Cookie|SESSDATA|账号/.test(task.error) && (
+                  <Button
+                    onClick={() => {
+                      setDetail(null);
+                      setPage("account");
+                    }}
+                  >
+                    重新登录
+                  </Button>
+                )}
+                {/磁盘|空间|os error 112|No space/i.test(task.error) && (
+                  <Button
+                    onClick={() => {
+                      setDetail(null);
+                      setPage("settings");
+                    }}
+                  >
+                    管理存储
+                  </Button>
+                )}
+                <Button onClick={() => void action(task.id, "retry")}>
+                  重试任务
+                </Button>
+              </div>
+            </div>
+          )}
           {task.warnings.map((w, i) => (
             <div className="warning-box" key={i}>
               {w}
@@ -617,12 +676,16 @@ function StatusIcon({ status }: { status: string }) {
 function Queue({
   tasks,
   onAdd,
+  onHistory,
+  cooldown,
   onAction,
   onDetail,
   onOpen,
 }: {
   tasks: Task[];
   onAdd: () => void;
+  onHistory: () => void;
+  cooldown: number;
   onAction: (id: string | string[], action: string) => void;
   onDetail: (id: string) => void;
   onOpen: (id: string, folder: boolean) => void;
@@ -679,10 +742,16 @@ function Queue({
           <h1>下载队列</h1>
           <span className="muted">{tasks.length} 个任务</span>
         </div>
-        <Button primary onClick={onAdd}>
-          <Plus size={17} />
-          新建下载
-        </Button>
+        <div className="actions">
+          <Button onClick={onHistory}>
+            <Clock3 size={16} />
+            下载历史
+          </Button>
+          <Button primary onClick={onAdd}>
+            <Plus size={17} />
+            新建下载
+          </Button>
+        </div>
       </div>
       <div className="transfer-bar">
         <div>
@@ -699,6 +768,12 @@ function Queue({
           {eta ? `约 ${Math.ceil(eta / 60)} 分钟` : "—"}
         </div>
       </div>
+      {cooldown > 0 && (
+        <div className="cooldown status paused">
+          <Clock3 size={14} />
+          请求冷却 {cooldown} 秒，结束后自动继续
+        </div>
+      )}
       <div className="filterbar">
         <div className="tabs">
           {groups.map(([id, label]) => (
@@ -809,14 +884,15 @@ function Queue({
                 )}
               </div>
               <div className="task-main">
-                <div className="task-title" title={t.item.title}>
+                <button
+                  className="task-title"
+                  title={t.item.title}
+                  onClick={() => onDetail(t.id)}
+                >
                   {t.item.title}
-                </div>
+                </button>
                 <div className="task-meta">
-                  <span>
-                    {t.options.format.toUpperCase()} ·{" "}
-                    {t.options.quality ? `${t.options.quality}P` : "最高可用"}
-                  </span>
+                  <span>{formatSummary(t.options)}</span>
                   <span className={`status ${t.status}`}>
                     <StatusIcon status={t.status} />
                     {t.status === "converting" ? t.stage : statusName[t.status]}
@@ -944,27 +1020,32 @@ function OptionsForm({
               ))}
             </select>
           </label>
-          <label>
-            画质
-            <select
-              disabled={o.resource === "extras"}
-              value={o.quality}
-              onChange={(e) => set("quality", Number(e.target.value))}
-            >
-              {[
-                [0, "最高可用"],
-                [2160, "4K"],
-                [1440, "2K"],
-                [1080, "1080P"],
-                [720, "720P"],
-                [480, "480P"],
-              ].map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
+          {["mp4", "mkv"].includes(o.format) && (
+            <label>
+              画质
+              <select
+                disabled={
+                  o.resource === "extras" ||
+                  ["mp3", "m4a", "flac", "wav"].includes(o.format)
+                }
+                value={o.quality}
+                onChange={(e) => set("quality", Number(e.target.value))}
+              >
+                {[
+                  [0, "最高可用"],
+                  [2160, "4K"],
+                  [1440, "2K"],
+                  [1080, "1080P"],
+                  [720, "720P"],
+                  [480, "480P"],
+                ].map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {["mp3", "m4a"].includes(o.format) && (
             <label>
               音频码率
@@ -1060,6 +1141,10 @@ function OptionsForm({
   );
 }
 function Add({
+  call,
+  handoff,
+  onHandoffUsed,
+  presets,
   input,
   setInput,
   parse,
@@ -1072,6 +1157,10 @@ function Add({
   onImport,
   onEnqueue,
 }: {
+  call: Call;
+  handoff: number;
+  onHandoffUsed: () => void;
+  presets: Presets;
   input: string;
   setInput: (value: string | ((previous: string) => string)) => void;
   parse: ParseState;
@@ -1082,11 +1171,59 @@ function Add({
   onCancel: () => void;
   error: string;
   onImport: () => Promise<string | undefined>;
-  onEnqueue: (items: MediaItem[]) => void;
+  onEnqueue: (items: MediaItem[], force: boolean) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const known = useRef(new Set<string>());
+  const parseButton = useRef<HTMLButtonElement>(null);
+  const handoffDone = useRef(0);
+  const [duplicates, setDuplicates] = useState<Record<string, string>>({});
+  const [skip, setSkip] = useState(true);
+  const [space, setSpace] = useState<number>();
+  const optionSignature = JSON.stringify(options);
+  useEffect(() => {
+    setSelected(new Set(parse.items.map((i) => i.url)));
+  }, [optionSignature]);
+  useEffect(() => {
+    if (!options.directory) return;
+    let done = false;
+    void call<number>("available_space", { directory: options.directory }).then(
+      (v) => {
+        if (!done) setSpace(v);
+      },
+    );
+    return () => {
+      done = true;
+    };
+  }, [options.directory]);
+  const signature = JSON.stringify([parse.items, options]);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void call<Record<string, string>>("check_duplicates", {
+        items: parse.items,
+        options,
+      }).then((result) => {
+        if (cancelled) return;
+        const next = result || {};
+        setDuplicates(next);
+        if (skip) setSelected((s) => new Set([...s].filter((u) => !next[u])));
+      });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [signature, skip]);
+  useEffect(() => {
+    if (handoff > 0 && !parse.running && handoffDone.current !== handoff) {
+      handoffDone.current = handoff;
+      parseButton.current?.click();
+      onHandoffUsed();
+    }
+  }, [handoff, parse.running]);
+
   const [expanded, setExpanded] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -1111,7 +1248,36 @@ function Add({
         <h1>新建下载</h1>
       </div>
       <div className="link-input">
+        {!input && (
+          <div className="input-empty-icon">
+            <ClipboardPaste size={28} strokeWidth={1.4} />
+          </div>
+        )}
+        <button
+          className="paste-button"
+          title="从剪贴板粘贴"
+          onClick={async () => {
+            try {
+              setInput(await navigator.clipboard.readText());
+            } catch {
+              document
+                .querySelector<HTMLTextAreaElement>(
+                  "textarea[aria-label='视频链接']",
+                )
+                ?.focus();
+            }
+          }}
+        >
+          <ClipboardPaste size={15} />
+          粘贴
+        </button>
         <textarea
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              parseButton.current?.click();
+            }
+          }}
           aria-label="视频链接"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -1127,8 +1293,11 @@ function Add({
             <Upload size={16} />
             导入 TXT
           </Button>
-          <Button
-            primary
+          <button
+            type="button"
+            className="primary"
+            title="解析链接（Ctrl + Enter）"
+            ref={parseButton}
             disabled={!input.trim() || parse.running || starting}
             onClick={async () => {
               setShowResults(true);
@@ -1148,7 +1317,7 @@ function Add({
           >
             <Search size={16} />
             解析链接
-          </Button>
+          </button>
         </div>
       </div>
       {showResults && (
@@ -1162,6 +1331,54 @@ function Add({
           }}
         >
           <div className="parse-dialog-body">
+            <div className="parse-preset">
+              <label>
+                下载预设
+                <select
+                  aria-label="选择下载预设"
+                  value={
+                    presets.items.find(
+                      (p) =>
+                        JSON.stringify(p.options) === JSON.stringify(options),
+                    )?.id || "custom"
+                  }
+                  onChange={(e) => {
+                    const p = presets.items.find(
+                      (p) => p.id === e.target.value,
+                    );
+                    if (p) setOptions(p.options);
+                  }}
+                >
+                  <option value="custom" disabled>
+                    自定义选项
+                  </option>
+                  {presets.items.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={skip}
+                  onChange={(e) => {
+                    setSkip(e.target.checked);
+                    setSelected(
+                      new Set(
+                        parse.items
+                          .filter(
+                            (i) => !e.target.checked || !duplicates[i.url],
+                          )
+                          .map((i) => i.url),
+                      ),
+                    );
+                  }}
+                />
+                跳过已下载 / 已在队列
+              </label>
+            </div>
             {error && (
               <div className="message error-message" role="alert">
                 <AlertCircle size={17} />
@@ -1173,8 +1390,7 @@ function Add({
               onClick={() => setExpanded(!expanded)}
             >
               <SlidersHorizontal size={16} />
-              {options.format.toUpperCase()} ·{" "}
-              {options.quality ? `${options.quality}P` : "最高可用"}
+              {formatSummary(options)}
               <span>{options.directory || "选择保存目录"}</span>
               <ChevronDown
                 size={16}
@@ -1221,7 +1437,9 @@ function Add({
                           e.target.checked
                             ? new Set([
                                 ...selected,
-                                ...filtered.map((i) => i.url),
+                                ...filtered
+                                  .filter((i) => !skip || !duplicates[i.url])
+                                  .map((i) => i.url),
                               ])
                             : new Set(
                                 [...selected].filter(
@@ -1232,6 +1450,9 @@ function Add({
                       }
                     />
                     已选 {selected.size} / {parse.items.length}
+                    {skip && Object.keys(duplicates).length > 0
+                      ? ` · 跳过 ${Object.keys(duplicates).length}`
+                      : ""}
                   </label>
                   <div className="search">
                     <Search size={15} />
@@ -1250,6 +1471,7 @@ function Add({
                     <label className="parse-row">
                       <input
                         type="checkbox"
+                        disabled={skip && !!duplicates[item.url]}
                         checked={selected.has(item.url)}
                         onChange={() =>
                           setSelected((s) => {
@@ -1266,7 +1488,14 @@ function Add({
                       </span>
                       <span className="parse-title">
                         <strong>{item.title}</strong>
-                        <small>{item.uploader}</small>
+                        <small>
+                          {item.uploader}
+                          {duplicates[item.url] && (
+                            <span className="downloaded-badge">
+                              {duplicates[item.url]}
+                            </span>
+                          )}
+                        </small>
                       </span>
                       <span className="muted">
                         {item.duration ? duration(item.duration) : ""}
@@ -1275,7 +1504,20 @@ function Add({
                   )}
                 />
                 <div className="add-footer">
-                  <span className="muted">{options.format.toUpperCase()}</span>
+                  <span className="muted selection-summary">
+                    {options.format.toUpperCase()} ·{" "}
+                    {duration(
+                      parse.items
+                        .filter((i) => selected.has(i.url))
+                        .reduce((n, i) => n + i.duration, 0),
+                    )}
+                    {space !== undefined && (
+                      <>
+                        <HardDrive size={14} />
+                        可用 {bytes(space)}
+                      </>
+                    )}
+                  </span>
                   <Button
                     primary
                     disabled={
@@ -1286,7 +1528,10 @@ function Add({
                       !options.directory
                     }
                     onClick={() =>
-                      onEnqueue(parse.items.filter((i) => selected.has(i.url)))
+                      onEnqueue(
+                        parse.items.filter((i) => selected.has(i.url)),
+                        !skip,
+                      )
                     }
                   >
                     {busy ? (
@@ -1313,15 +1558,24 @@ type Call = <T>(
   args?: Record<string, unknown>,
 ) => Promise<T | undefined>;
 function AccountPage({
+  error,
   call,
   notify,
 }: {
   call: Call;
   notify: (s: string) => void;
+  error: string;
 }) {
   const [user, setUser] = useState<Account | null>(null);
   const [method, setMethod] = useState<"qr" | "cookie" | null>(null);
   const [qr, setQr] = useState("");
+  const qrGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      qrGeneration.current++;
+    },
+    [],
+  );
   const [key, setKey] = useState("");
   const [qrStatus, setQrStatus] = useState("");
   const [cookie, setCookie] = useState("");
@@ -1375,11 +1629,14 @@ function AccountPage({
     };
   }, [key, call, notify]);
   const generate = async () => {
+    const generation = ++qrGeneration.current;
     setMethod("qr");
     setLoading(true);
     setQr("");
     setKey("");
     const result = await call<{ url: string; qrcode_key: string }>("qr_login");
+    if (generation !== qrGeneration.current) return;
+    if (!result) setQrStatus("二维码加载失败，请刷新重试");
     if (result) {
       setQr(
         await QRCode.toDataURL(result.url, {
@@ -1422,6 +1679,7 @@ function AccountPage({
         </div>
         <div>
           <h2>{user?.loggedIn ? user.name : "哔哩哔哩账号"}</h2>
+          {user?.loggedIn && <p className="account-uid">UID {user.uid}</p>}
           {user?.loggedIn ? (
             <span className={`status ${user.cached ? "paused" : "completed"}`}>
               <Check size={14} />
@@ -1449,7 +1707,7 @@ function AccountPage({
           </Button>
         )}
       </div>
-      {(!user?.loggedIn || method) && (
+      {
         <div className="actions">
           <Button primary onClick={() => void generate()}>
             <QrCode size={17} />
@@ -1465,91 +1723,127 @@ function AccountPage({
             Cookie 导入
           </Button>
         </div>
-      )}
+      }
       {method === "qr" && (
-        <div className="login-panel">
-          <div className="qr-frame">
-            {loading ? (
-              <Loader2 className="spin" size={26} />
-            ) : qr ? (
-              <img src={qr} alt="B站登录二维码" />
-            ) : (
-              <QrCode size={80} />
-            )}
+        <Modal
+          title="扫码登录"
+          onClose={() => {
+            qrGeneration.current++;
+            setMethod(null);
+            setKey("");
+          }}
+        >
+          {error && (
+            <div className="error-box" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="login-panel">
+            <div className="qr-frame">
+              {loading ? (
+                <Loader2 className="spin" size={26} />
+              ) : qr ? (
+                <img src={qr} alt="B站登录二维码" />
+              ) : (
+                <QrCode size={80} />
+              )}
+            </div>
+            <p className="muted">{qrStatus}</p>
+            <Button onClick={() => void generate()} disabled={loading}>
+              <RefreshCw size={15} />
+              刷新二维码
+            </Button>
           </div>
-          <p className="muted">{qrStatus}</p>
-          <Button onClick={() => void generate()} disabled={loading}>
-            <RefreshCw size={15} />
-            刷新二维码
-          </Button>
-        </div>
+        </Modal>
       )}
       {method === "cookie" && (
-        <div className="setting-section">
-          <h3>导入 Cookie</h3>
-          <textarea
-            className="cookie-input"
-            aria-label="Cookie 内容"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Cookie 请求头、Netscape 文件或 JSON"
-            value={cookie}
-            onChange={(e) => setCookie(e.target.value)}
-          />
-          <div className="actions">
-            <Button
-              onClick={async () => {
-                const path = await open({
-                  filters: [
-                    { name: "Cookie", extensions: ["txt", "json", "cookies"] },
-                  ],
-                  multiple: false,
-                });
-                if (path) {
-                  const s = await call<string>("read_text", { path });
-                  if (s) setCookie(s);
-                }
-              }}
-            >
-              <Upload size={16} />
-              导入文件
-            </Button>
-            <Button
-              primary
-              disabled={!cookie.trim() || loading}
-              onClick={async () => {
-                setLoading(true);
-                const account = await call<Account>("import_cookie", {
-                  cookie,
-                });
-                setLoading(false);
-                if (account) {
-                  setUser(account);
-                  setCookie("");
-                  setMethod(null);
-                  notify("登录成功");
-                }
-              }}
-            >
-              {loading ? (
-                <Loader2 className="spin" size={16} />
-              ) : (
-                <Check size={16} />
-              )}
-              验证并保存
-            </Button>
+        <Modal
+          title="导入 Cookie"
+          onClose={() => {
+            setMethod(null);
+            setCookie("");
+          }}
+        >
+          {error && (
+            <div className="error-box" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="setting-section">
+            <h3>导入 Cookie</h3>
+            <textarea
+              className="cookie-input"
+              aria-label="Cookie 内容"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Cookie 请求头、Netscape 文件或 JSON"
+              value={cookie}
+              onChange={(e) => setCookie(e.target.value)}
+            />
+            <div className="actions">
+              <Button
+                onClick={async () => {
+                  const path = await open({
+                    filters: [
+                      {
+                        name: "Cookie",
+                        extensions: ["txt", "json", "cookies"],
+                      },
+                    ],
+                    multiple: false,
+                  });
+                  if (path) {
+                    const s = await call<string>("read_text", { path });
+                    if (s) setCookie(s);
+                  }
+                }}
+              >
+                <Upload size={16} />
+                导入文件
+              </Button>
+              <Button
+                primary
+                disabled={!cookie.trim() || loading}
+                onClick={async () => {
+                  setLoading(true);
+                  const account = await call<Account>("import_cookie", {
+                    cookie,
+                  });
+                  setLoading(false);
+                  if (account) {
+                    setUser(account);
+                    setCookie("");
+                    setMethod(null);
+                    notify("登录成功");
+                  }
+                }}
+              >
+                {loading ? (
+                  <Loader2 className="spin" size={16} />
+                ) : (
+                  <Check size={16} />
+                )}
+                验证并保存
+              </Button>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
 
 function SettingsPage({
+  call,
+  notify,
+  version,
   settings,
   onSave,
   onExport,
 }: {
+  call: Call;
+  notify: (s: string) => void;
+  version: string;
   settings: Settings;
   onSave: (s: Settings) => void;
   onExport: () => void;
@@ -1565,48 +1859,62 @@ function SettingsPage({
           保存设置
         </Button>
       </div>
-      <div className="setting-section">
-        <h3>并发与恢复</h3>
-        <div className="form-grid">
-          {(
-            [
-              ["tasks", "同时下载任务", 1, 16],
-              ["connections", "单资源连接", 1, 8],
-              ["globalConnections", "全局下载连接", 1, 64],
-              ["conversions", "同时转换任务", 1, 4],
-              ["retries", "失败重试次数", 0, 10],
-              ["rateLimitKib", "下载限速 · KiB/s，0 不限速", 0, 1048576],
-            ] as const
-          ).map(([k, l, min, max]) => (
-            <label key={k}>
-              {l}
-              <input
-                type="number"
-                min={min}
-                max={max}
-                value={form[k]}
-                onChange={(e) => set(k, Number(e.target.value))}
-              />
-            </label>
-          ))}
+      <div className="settings-grid">
+        <div className="setting-section">
+          <h3>并发与恢复</h3>
+          <div className="form-grid">
+            {(
+              [
+                ["tasks", "同时下载任务", 1, 16],
+                ["connections", "单资源连接", 1, 8],
+                ["globalConnections", "全局下载连接", 1, 64],
+                ["conversions", "同时转换任务", 1, 4],
+                ["retries", "失败重试次数", 0, 10],
+                ["diskReserveMib", "磁盘预留 · MiB", 64, 16384],
+                ["rateLimitKib", "下载限速 · KiB/s，0 不限速", 0, 1048576],
+              ] as const
+            ).map(([k, l, min, max]) => (
+              <label key={k}>
+                {l}
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  value={form[k]}
+                  onChange={(e) => set(k, Number(e.target.value))}
+                />
+              </label>
+            ))}
+          </div>
         </div>
-        <div className="check-row">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={form.resumeOnStart}
-              onChange={(e) => set("resumeOnStart", e.target.checked)}
-            />
-            启动后恢复任务
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={form.tray}
-              onChange={(e) => set("tray", e.target.checked)}
-            />
-            关闭窗口后留在托盘
-          </label>
+        <div className="setting-section app-settings">
+          <h3>应用</h3>
+          <div className="check-row">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.resumeOnStart}
+                onChange={(e) => set("resumeOnStart", e.target.checked)}
+              />
+              启动后恢复任务
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.tray}
+                onChange={(e) => set("tray", e.target.checked)}
+              />
+              关闭窗口后留在托盘
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.notifications ?? true}
+                onChange={(e) => set("notifications", e.target.checked)}
+              />
+              下载完成时通知
+            </label>
+          </div>
         </div>
       </div>
       <div className="setting-section">
@@ -1631,13 +1939,14 @@ function SettingsPage({
       <div className="setting-section diagnostics">
         <div>
           <h3>诊断信息</h3>
-          <span className="muted">v0.1.0</span>
+          <span className="muted">v{version}</span>
         </div>
         <Button onClick={onExport}>
           <Upload size={16} />
           导出
         </Button>
       </div>
+      <MaintenancePanel call={call} notify={notify} version={version} />
     </div>
   );
 }

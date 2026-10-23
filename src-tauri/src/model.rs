@@ -13,6 +13,8 @@ pub fn now() -> u64 {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
+    pub notifications: bool,
+    pub disk_reserve_mib: u64,
     pub directory: String,
     pub tasks: usize,
     pub connections: usize,
@@ -33,6 +35,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            notifications: true,
+            disk_reserve_mib: 512,
             directory: crate::platform::download_directory()
                 .to_string_lossy()
                 .into_owned(),
@@ -64,6 +68,10 @@ impl Settings {
             "并发设置超出范围"
         );
         anyhow::ensure!(self.retries <= 10, "最多重试 10 次");
+        anyhow::ensure!(
+            (64..=16384).contains(&self.disk_reserve_mib),
+            "磁盘预留空间应为 64–16384 MiB"
+        );
         anyhow::ensure!(
             PathBuf::from(&self.directory).is_absolute(),
             "请选择绝对保存路径"

@@ -1,5 +1,7 @@
 pub mod download;
 pub mod engine;
+pub mod library;
+pub mod maintenance;
 pub mod media;
 pub mod model;
 pub mod platform;
@@ -15,6 +17,8 @@ use std::{
     time::Duration,
 };
 use tauri::{Manager, State};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 type AppState<'a> = State<'a, Arc<Engine>>;
 fn error(e: impl std::fmt::Display) -> String {
@@ -29,8 +33,152 @@ fn save_settings(settings: Settings, state: AppState<'_>) -> Result<(), String> 
     state.save_settings(settings).map_err(error)
 }
 #[tauri::command]
-fn enqueue(items: Vec<MediaItem>, options: Options, state: AppState<'_>) -> Result<usize, String> {
-    state.enqueue(items, options).map_err(error)
+fn enqueue(
+    items: Vec<MediaItem>,
+    options: Options,
+    force: Option<bool>,
+    state: AppState<'_>,
+) -> Result<usize, String> {
+    state
+        .enqueue_with(items, options, force.unwrap_or(false))
+        .map_err(error)
+}
+#[tauri::command]
+fn save_presets(presets: library::Presets, state: AppState<'_>) -> Result<(), String> {
+    presets.validate().map_err(error)?;
+    state
+        .store
+        .save_config("presets", &presets)
+        .map_err(error)?;
+    *state.presets.lock().unwrap() = presets;
+    Ok(())
+}
+#[tauri::command]
+fn check_duplicates(
+    items: Vec<MediaItem>,
+    options: Options,
+    state: AppState<'_>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    if items.len() > 5000 {
+        return Err("单次最多检查 5000 项".into());
+    }
+    state.duplicates(&items, &options).map_err(error)
+}
+#[tauri::command]
+fn ack_handoff(state: AppState<'_>) {
+    *state.incoming.lock().unwrap() = None;
+}
+#[tauri::command]
+fn available_space(directory: String) -> Result<u64, String> {
+    if !Path::new(&directory).is_absolute() {
+        return Err("请选择绝对保存目录".into());
+    }
+    library::available(Path::new(&directory)).map_err(error)
+}
+#[tauri::command]
+fn download_history(state: AppState<'_>) -> Result<Vec<library::HistoryEntry>, String> {
+    state.store.history().map_err(error)
+}
+#[tauri::command]
+async fn maintenance_status(state: AppState<'_>) -> Result<maintenance::Maintenance, String> {
+    let parser = maintenance::parser_path(&state.provider.tools, &state.data);
+    let output = state.settings.lock().unwrap().directory.clone();
+    let data = state.data.clone();
+    let cache_bytes = tauri::async_runtime::spawn_blocking(move || {
+        maintenance::directory_size(&data.join("cache"))
+    })
+    .await
+    .map_err(error)?;
+    Ok(maintenance::Maintenance {
+        cache_bytes,
+        cache_free: library::available(&state.data).map_err(error)?,
+        output_free: library::available(Path::new(&output)).map_err(error)?,
+        parser_version: maintenance::version(&parser).await,
+        parser_updated: parser.starts_with(&state.data),
+        updating: state.updater.gate.try_lock().is_err(),
+    })
+}
+#[tauri::command]
+async fn update_parser(state: AppState<'_>) -> Result<String, String> {
+    maintenance::update(&state.data, &state.provider.tools, &state.updater)
+        .await
+        .map_err(error)
+}
+#[tauri::command]
+fn cancel_parser_update(state: AppState<'_>) {
+    state.updater.cancel.lock().unwrap().cancel();
+}
+#[tauri::command]
+async fn reset_parser(state: AppState<'_>) -> Result<(), String> {
+    let _guard = state.updater.gate.try_lock().map_err(|_| "请先停止更新")?;
+    let p = state.data.join("parser/current.json");
+    if p.exists() {
+        tokio::fs::remove_file(p).await.map_err(error)?;
+    }
+    Ok(())
+}
+#[tauri::command]
+async fn clear_finished_cache(state: AppState<'_>) -> Result<usize, String> {
+    let ids: Vec<_> = state
+        .tasks
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|t| t.status == "completed")
+        .map(|t| t.id.clone())
+        .collect();
+    let active = state
+        .active
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let known = state
+        .tasks
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|t| t.status != "completed")
+        .map(|t| t.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let root = state.data.join("cache");
+    let mut count = 0;
+    if !root.exists() {
+        return Ok(0);
+    }
+    let mut entries = tokio::fs::read_dir(root).await.map_err(error)?;
+    while let Some(e) = entries.next_entry().await.map_err(error)? {
+        let id = e.file_name().to_string_lossy().into_owned();
+        if (ids.contains(&id) || !known.contains(&id))
+            && !active.contains(&id)
+            && e.file_type().await.map_err(error)?.is_dir()
+            && !e.file_type().await.map_err(error)?.is_symlink()
+        {
+            tokio::fs::remove_dir_all(e.path()).await.map_err(error)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+#[tauri::command]
+fn open_companion(app: tauri::AppHandle) -> Result<(), String> {
+    app.opener()
+        .open_url(
+            "https://github.com/BeamusWayne/bili-live-companion",
+            None::<&str>,
+        )
+        .map_err(error)
+}
+fn accept_handoff(app: &tauri::AppHandle, raw: &str) {
+    if let (Some(engine), Ok(input)) = (app.try_state::<Arc<Engine>>(), library::handoff(raw)) {
+        *engine.incoming.lock().unwrap() = Some(input);
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
 }
 #[tauri::command]
 fn task_action(
@@ -312,6 +460,8 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -329,6 +479,51 @@ pub fn run() {
                 std::sync::atomic::Ordering::Relaxed,
             );
             app.manage(engine.clone());
+            #[cfg(all(not(debug_assertions), any(target_os = "windows", target_os = "linux")))]
+            app.deep_link().register_all()?;
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for uri in urls {
+                    accept_handoff(app.handle(), uri.as_str());
+                }
+            }
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for uri in event.urls() {
+                    accept_handoff(&handle, uri.as_str());
+                }
+            });
+            let handle = app.handle().clone();
+            let notifier_engine = engine.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut completed = std::collections::HashSet::new();
+                let mut boot = true;
+                loop {
+                    if notifier_engine.shutdown.is_cancelled() {
+                        break;
+                    }
+                    let ids: std::collections::HashSet<_> = notifier_engine
+                        .tasks
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|t| t.status == "completed")
+                        .map(|t| t.id.clone())
+                        .collect();
+                    let count = ids.difference(&completed).count();
+                    if !boot && count > 0 && notifier_engine.settings.lock().unwrap().notifications
+                    {
+                        let _ = handle
+                            .notification()
+                            .builder()
+                            .title("下载完成")
+                            .body(format!("{count} 个任务已保存"))
+                            .show();
+                    }
+                    completed = ids;
+                    boot = false;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            });
             engine.start();
             let show =
                 tauri::menu::MenuItem::with_id(app, "show", "打开下载器", true, None::<&str>)?;
@@ -367,6 +562,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            save_presets,
+            check_duplicates,
+            ack_handoff,
+            available_space,
+            download_history,
+            maintenance_status,
+            update_parser,
+            cancel_parser_update,
+            reset_parser,
+            clear_finished_cache,
+            open_companion,
             save_settings,
             enqueue,
             task_action,
