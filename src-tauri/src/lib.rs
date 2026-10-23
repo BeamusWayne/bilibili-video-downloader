@@ -316,7 +316,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
-            app.set_menu(tauri::menu::Menu::default(app)?)?;
+            app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
             let data = app.path().app_data_dir()?;
             let tools = if cfg!(debug_assertions) {
                 platform::development_tools()

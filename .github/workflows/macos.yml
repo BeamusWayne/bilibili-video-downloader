@@ -50,6 +50,7 @@ jobs:
       - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
         with:
           workspaces: "src-tauri -> target"
+          cache-on-failure: true
       - run: npm ci
       - name: Prepare verified native tools and icon
         run: npm run prepare:tools
